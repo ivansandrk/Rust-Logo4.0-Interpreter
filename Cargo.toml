@@ -1,0 +1,13 @@
+[package]
+name = "logo"
+version = "0.1.0"
+authors = ["isandrk"]
+
+#[[bin]]
+#name = "lexer"
+#path = "src/lexer.rs"
+
+[dependencies]
+#piston_window = "0.81.0"
+#image = "0.20.0"
+ggez = "0.4"
