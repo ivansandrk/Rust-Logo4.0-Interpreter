@@ -15,13 +15,17 @@ pub enum Command {
   Block(Vec<Command>),
   Repeat(u32, Box<Command>),
 
+  // Values.
+  // Can be 180, 4.5, -10, 360/4, 4*10, 2+3, :mad, 20+100/:n
+  ValueExpr(),
+
   // Turtle commands.
   Fd(f32),
   Bk(f32),
   Rt(f32),
   Lt(f32),
 
-  // Other.
+  // Canvas commands.
   Cs,
 
   Unknown,
