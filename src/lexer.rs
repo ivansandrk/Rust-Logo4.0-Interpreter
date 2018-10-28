@@ -53,8 +53,7 @@ const KEYWORDS: &str = "
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
-  // TODO: Word can be function or var.
-  // What about strings?
+  // TODO: Word can be function or var.  What about strings?
   Word(String),
   Keyword(String),
 
@@ -226,7 +225,7 @@ impl<'a> Lexer<'a> {
     }
   }
 
-  fn lex(&mut self) -> Result<Vec<Token>, String> {
+  pub fn process(&mut self) -> Result<Vec<Token>, String> {
     let simple_token_map: std::collections::HashMap<char, Token> =
         SIMPLE_TOKEN_MAP.iter().cloned().collect();
 
@@ -289,13 +288,13 @@ mod tests {
   use super::*;
 
   fn test_ok(input: &str, expected: &[Token]) {
-    let lexed = Lexer::new(input).lex();
+    let lexed = Lexer::new(input).process();
     let expected = Ok(expected.to_vec());
     assert_eq!(expected, lexed);
   }
 
   fn test_err(input: &str, expected: &str) {
-    let lexed = Lexer::new(input).lex();
+    let lexed = Lexer::new(input).process();
     let expected = Err(expected.to_string());
     assert_eq!(expected, lexed);
   }
@@ -385,17 +384,17 @@ mod tests {
   }
 }
 
-fn test_lexer(input: &str) {
-  println!("{:?}", Lexer::new(input).lex());
-}
+// fn test_lexer(input: &str) {
+//   println!("{:?}", Lexer::new(input).process());
+// }
 
-fn main() {
-  #[allow(unused_variables)]
-  test_lexer(" rePEat 4[fd 5 rt   90] [lt 5  fd 10 ] ");
-  test_lexer(" REPEAT 4[fd 5 Rt   90 [ bK  10 FD 50] ] fd 10");
-  test_lexer("fd ");
-  test_lexer(" :ASD1 2 3.4 .5a");
-  test_lexer("fd 50 :5 :");
-  test_lexer("shown? []");
-  test_lexer("TO DOE?T :ASD? :BB");
-}
+// fn main() {
+//   #[allow(unused_variables)]
+//   test_lexer(" rePEat 4[fd 5 rt   90] [lt 5  fd 10 ] ");
+//   test_lexer(" REPEAT 4[fd 5 Rt   90 [ bK  10 FD 50] ] fd 10");
+//   test_lexer("fd ");
+//   test_lexer(" :ASD1 2 3.4 .5a");
+//   test_lexer("fd 50 :5 :");
+//   test_lexer("shown? []");
+//   test_lexer("TO DOE?T :ASD? :BB");
+// }
