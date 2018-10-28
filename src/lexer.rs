@@ -1,11 +1,13 @@
 // *
-// - token for whitespace? it's possible newline is needed
+// - token for whitespace? it's possible newline is needed. it is indeed.
 
 use std::collections::HashSet;
 use std::iter::FromIterator;
 
-const DELIMITERS: &str = "()[]{}+-*/<>=";
+const DELIMITERS: &str = "()[]{}+-*/<>= \\\n";
 const SIMPLE_TOKEN_MAP: &[(char, Token)] = &[
+  ('\n', Token::Line),
+  ('\\', Token::LineCont),
   ('+', Token::Plus),
   ('-', Token::Minus),
   ('*', Token::Multiply),
@@ -53,6 +55,12 @@ const KEYWORDS: &str = "
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
+  // TODO: Lexer needs to give parser Line knowledge.
+  // Probably don't need both Line and LineCont, just Line is enough.
+  // But if Lexer is getting just one line then it cannot tell.
+  Line,
+  LineCont,
+
   // TODO: Word can be function or var.  What about strings?
   Word(String),
   Keyword(String),
@@ -141,17 +149,14 @@ impl<'a> Lexer<'a> {
 
   fn skip_whitespace(&mut self) {
     while let Some(c) = self.peek_char() {
-      if !c.is_whitespace() {
-        break;
+      match c {
+        ' ' | '\t' => { self.next_char(); },
+        _          => { break; }
       }
-      self.next_char();
     }
   }
 
   fn is_delimiter(&mut self, c: char) -> bool {
-    if c.is_whitespace() {
-      return true;
-    }
     DELIMITERS.contains(c)
   }
 
@@ -372,6 +377,7 @@ mod tests {
   fn number_num() {
     test_ok("repeat \n 50[", &[
       Token::Keyword("REPEAT".to_string()),
+      Token::Line,
       Token::Num(50),
       Token::OpenBracket,
     ]);
@@ -381,6 +387,25 @@ mod tests {
   fn unknown_token() {
     test_err("fd 5 `",
              "Error at pos 0,5: unknown char '`'");
+  }
+
+  #[test]
+  fn line_cont() {
+    test_ok ("REPEAT 4 [FD 40\\\nRT 90]fd 50\n", &[
+      Token::Keyword("REPEAT".to_string()),
+      Token::Num(4),
+      Token::OpenBracket,
+      Token::Keyword("FD".to_string()),
+      Token::Num(40),
+      Token::LineCont,
+      Token::Line,
+      Token::Keyword("RT".to_string()),
+      Token::Num(90),
+      Token::CloseBracket,
+      Token::Keyword("FD".to_string()),
+      Token::Num(50),
+      Token::Line,
+    ]);
   }
 }
 
