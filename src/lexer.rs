@@ -82,6 +82,9 @@ pub enum Token {
   Less,
   Greater,
   Equal,
+
+  // Not known yet.
+  Unknown,
 }
 
 pub struct Lexer<'a> {
@@ -245,38 +248,35 @@ impl<'a> Lexer<'a> {
         continue;
       }
 
+      let token: Token;
       match c {
         ':' => {
           self.next_char();
-          let word = self.next_word()?;
-          // self.check_wor
-          self.tokens.push(Token::Var(word));
+          token = Token::Var(self.next_word()?);
         },
         '"' => {
           self.next_char();
-          let word = self.next_word()?;
-          self.tokens.push(Token::Assignment(word));
+          token = Token::Assignment(self.next_word()?);
         },
         // TODO: Probably need to think about 0xA3, 0b1101, 0o70.
         _ if c.is_digit(10) || c == '.' => {
           // Integer or floating point number.
-          let token = self.next_number()?;
-          self.tokens.push(token);
+          token = self.next_number()?;
         },
         _ if c.is_alphabetic() => {
           let word = self.next_word()?;
-          let token =
-            if self.keyword_set.contains(word.as_str()) {
+          token = if self.keyword_set.contains(word.as_str()) {
               Token::Keyword(word)
-            } else {
+          } else {
               Token::Word(word)
-            };
-          self.tokens.push(token);
+          };
         },
         _ => {
           self.error(&format!("unknown char '{}'", c))?;
+          token = Token::Unknown;
         },
       }
+      self.tokens.push(token);
     }
 
     let tokens = std::mem::replace(&mut self.tokens, Vec::new());
@@ -376,6 +376,12 @@ mod tests {
       Token::Num(50),
       Token::OpenBracket,
     ]);
+  }
+
+  #[test]
+  fn unknown_token() {
+    test_err("fd 5 `",
+             "Error at pos 0,5: unknown char '`'");
   }
 }
 
