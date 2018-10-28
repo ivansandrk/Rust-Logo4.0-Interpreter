@@ -1,8 +1,18 @@
 // *
 // - token for whitespace? it's possible newline is needed. it is indeed.
+// - implement Iter(able) on Lexer
+// - get rid of SIMPLE_TOKEN_MAP?
 
+// Need to import used modules.  If you use things like "std::str::Chars"
+// then you need to import std (use std).
+// use std;
+// use std::*;
+use std::iter::Peekable;
+use std::str::Chars;
 use std::collections::HashSet;
+use std::collections::HashMap;
 use std::iter::FromIterator;
+use std::mem::replace;
 
 const DELIMITERS: &str = "()[]{}+-*/<>= \\\n";
 const SIMPLE_TOKEN_MAP: &[(char, Token)] = &[
@@ -95,15 +105,15 @@ pub enum Token {
 }
 
 pub struct Lexer<'a> {
-  iter: std::iter::Peekable<std::str::Chars<'a>>,
+  iter: Peekable<Chars<'a>>,
   tokens: Vec<Token>,
   row: u32,
   col: u32,
-  keyword_set: std::collections::HashSet<&'static str>,
+  keyword_set: HashSet<&'static str>,
 }
 
 impl<'a> Lexer<'a> {
-  fn new(input: &'a str) -> Self {
+  pub fn new(input: &'a str) -> Self {
     Self {
       iter: input.chars().peekable(),
       tokens: Vec::new(),
@@ -231,7 +241,7 @@ impl<'a> Lexer<'a> {
   }
 
   pub fn process(&mut self) -> Result<Vec<Token>, String> {
-    let simple_token_map: std::collections::HashMap<char, Token> =
+    let simple_token_map: HashMap<char, Token> =
         SIMPLE_TOKEN_MAP.iter().cloned().collect();
 
     loop {
@@ -283,7 +293,7 @@ impl<'a> Lexer<'a> {
       self.tokens.push(token);
     }
 
-    let tokens = std::mem::replace(&mut self.tokens, Vec::new());
+    let tokens = replace(&mut self.tokens, Vec::new());
     Ok(tokens)
   }
 }
