@@ -51,7 +51,7 @@ const KEYWORDS: &str = "
   READ
 ";
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Token {
   // TODO: Word can be function or var.
   // What about strings?
@@ -107,13 +107,14 @@ impl<'a> Lexer<'a> {
     Err(format!("Error at pos {},{}: {}", self.row, self.col, info))
   }
 
-  // fn check_error_delimiter(&mut self, word: &str) -> Result<String, String> {
-  //   if let Some(c) = self.peek_char() {
-  //     if !self.is_delimiter(c) {
-  //       self.error(&format!("invalid delimiter after token '{}'", word))?;
-  //     }
-  //   }
-  // }
+  fn check_error_delimiter(&mut self, word: &str) -> Result<(), String> {
+    if let Some(c) = self.peek_char() {
+      if !self.is_delimiter(c) {
+        self.error(&format!("invalid delimiter '{}' after token '{}'", c, word))?;
+      }
+    }
+    Ok(())
+  }
 
   fn peek_char(&mut self) -> Option<char> {
     // Have the return types of peek & next consistent.
@@ -177,11 +178,6 @@ impl<'a> Lexer<'a> {
       self.next_char();
     }
     self.check_error_delimiter(word.as_str())?;
-    if let Some(c) = self.peek_char() {
-      if !self.is_delimiter(c) {
-        self.error(&format!("invalid delimiter after word '{}'", word))?;
-      }
-    }
     // Only keywords can end with a '?'.
     if word.ends_with('?') && !self.keyword_set.contains(word.as_str()) {
       self.error(&format!("identifier cannot end with a ? {}", word))?;
@@ -214,11 +210,7 @@ impl<'a> Lexer<'a> {
       }
       self.next_char();
     }
-    if let Some(c) = self.peek_char() {
-      if !self.is_delimiter(c) {
-        self.error(&format!("invalid delimiter after number '{}'", num))?;
-      }
-    }
+    self.check_error_delimiter(num.as_str())?;
     if digits < 1 || periods > 1 {
       self.error(&format!("invalid number '{}'", num))?;
     }
@@ -289,6 +281,101 @@ impl<'a> Lexer<'a> {
 
     let tokens = std::mem::replace(&mut self.tokens, Vec::new());
     Ok(tokens)
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  fn test_ok(input: &str, expected: &[Token]) {
+    let lexed = Lexer::new(input).lex();
+    let expected = Ok(expected.to_vec());
+    assert_eq!(expected, lexed);
+  }
+
+  fn test_err(input: &str, expected: &str) {
+    let lexed = Lexer::new(input).lex();
+    let expected = Err(expected.to_string());
+    assert_eq!(expected, lexed);
+  }
+
+  #[test]
+  fn word_doesnt_start_with_a_letter() {
+    test_err("fd :2BAR",
+             "Error at pos 0,4: word starts with a letter, got '2'");
+  }
+
+  #[test]
+  fn missing_word() {
+    test_err("MaKE \"",
+             "Error at pos 0,6: missing word");
+  }
+
+  #[test]
+  fn word_bad_delimiter() {
+    test_err("EMPTY?5 FD",
+             "Error at pos 0,6: invalid delimiter '5' after token 'EMPTY?'");
+  }
+
+  #[test]
+  fn function_identifier_cannot_end_with_question_mark() {
+    test_err("TO FOO? :BAR",
+             "Error at pos 0,7: identifier cannot end with a ? FOO?");
+  }
+
+  #[test]
+  fn var_identifier_cannot_end_with_question_mark() {
+    test_err("TO FOO :BAR?",
+             "Error at pos 0,12: identifier cannot end with a ? BAR?");
+  }
+
+  #[test]
+  fn keyword_can_end_with_question_mark() {
+    test_ok("shown? []", &[
+      Token::Keyword("SHOWN?".to_string()),
+      Token::OpenBracket,
+      Token::CloseBracket,
+    ]);
+  }
+
+  #[test]
+  fn number_bad_delimiter() {
+    test_err("fd 50a",
+             "Error at pos 0,5: invalid delimiter 'a' after token '50'");
+  }
+
+  #[test]
+  fn number_too_many_periods() {
+    test_err("fd 50.4.",
+             "Error at pos 0,8: invalid number '50.4.'");
+  }
+
+  #[test]
+  fn number_no_digits() {
+    test_err("rt \n.",
+             "Error at pos 1,1: invalid number '.'");
+  }
+
+  #[test]
+  fn number_float() {
+    test_ok("bk 50.5 rt  .5 fd 19.", &[
+      Token::Keyword("BK".to_string()),
+      Token::Float(50.5),
+      Token::Keyword("RT".to_string()),
+      Token::Float(0.5),
+      Token::Keyword("FD".to_string()),
+      Token::Float(19.),
+    ]);
+  }
+
+  #[test]
+  fn number_num() {
+    test_ok("repeat \n 50[", &[
+      Token::Keyword("REPEAT".to_string()),
+      Token::Num(50),
+      Token::OpenBracket,
+    ]);
   }
 }
 

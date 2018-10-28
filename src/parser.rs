@@ -2,7 +2,6 @@
 
 // TODOs:
 // - perhaps a parsing subsystem with an interface that just gives available expressions
-// - split into tokenizer / lexer / parser (or something like that)
 
 use std::collections::VecDeque;
 use std::mem;
