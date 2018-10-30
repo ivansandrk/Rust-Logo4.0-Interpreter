@@ -1,7 +1,8 @@
 // *
 // - token for whitespace? it's possible newline is needed. it is indeed.
 // - implement Iter(able) on Lexer
-// - get rid of SIMPLE_TOKEN_MAP?
+// - get rid of SIMPLE_TOKEN_MAP and fold it into the main match?
+// - forgo Strings, use &str everywhere
 
 // Need to import used modules.  If you use things like "std::str::Chars"
 // then you need to import std (use std).
@@ -14,13 +15,14 @@ use std::collections::HashMap;
 use std::iter::FromIterator;
 use std::mem::replace;
 
-const DELIMITERS: &str = "()[]{}+-*/<>= \\\n";
+const DELIMITERS: &str = "()[]{}+-*/%<>= \\\n";
 const SIMPLE_TOKEN_MAP: &[(char, Token)] = &[
   ('\n', Token::Line),
   ('\\', Token::LineCont),
   ('+', Token::Plus),
   ('-', Token::Minus),
   ('*', Token::Multiply),
+  ('%', Token::Modulo),
   ('/', Token::Divide),
   ('(', Token::OpenParen),
   (')', Token::CloseParen),
@@ -86,6 +88,7 @@ pub enum Token {
   Minus,
   Multiply,
   Divide,
+  Modulo,
 
   // Brackets.
   OpenParen,

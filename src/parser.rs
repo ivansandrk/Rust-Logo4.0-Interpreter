@@ -1,18 +1,33 @@
-#![allow(dead_code)]
-
-// TODOs:
+// *
 // - perhaps a parsing subsystem with an interface that just gives available expressions
+// - BoolExpr
+// - NoneExpr?
+// - ListExpr?
+// - List type definitely
+#![allow(unused_variables)]
 
+mod lexer;
+
+use lexer::{Token, Lexer};
 use std::collections::VecDeque;
-use std::mem;
 
-// TODO: Have the Command enum outside of parser so then turtle depends just on
-// command, instead of full parser.
 #[derive(Debug)]
-pub enum Command {
+pub enum ValueExpr {
+  Num(i32),
+  Float(f32),
+  Var(String),
+
+  Add(Box<ValueExpr>, Box<ValueExpr>),
+  Subtract(Box<ValueExpr>, Box<ValueExpr>),
+  Multiply(Box<ValueExpr>, Box<ValueExpr>),
+  Divide(Box<ValueExpr>, Box<ValueExpr>),
+}
+
+#[derive(Debug)]
+pub enum Expr {
   // Control flow commands.
-  Block(Vec<Command>),
-  Repeat(u32, Box<Command>),
+  Block(Vec<Expr>),
+  Repeat(u32, Box<Expr>),
 
   // Values.
   // Can be 180, 4.5, -10, 360/4, 4*10, 2+3, :mad, 20+100/:n
@@ -31,110 +46,67 @@ pub enum Command {
   // Move { x: i32, y: i32 },
 }
 
-#[derive(Default)]
+// #[derive(Default)]
 pub struct Parser {
-  tokens: VecDeque<String>,
-  current_token: String,
+  // iter: std::iter::Peekable<Token>,
+  tokens: Result<Vec<Token>, String>,
+  // current_token: String,
+  // stack: Vec<>, // vec of what?
 }
 
 impl Parser {
-  pub fn new() -> Parser {
-    Parser { ..Default::default() }
-  }
-
-  fn push_current_token_if_non_empty(&mut self) {
-    if self.current_token.len() > 0 {
-      let current_token = mem::replace(&mut self.current_token, String::new());
-      self.tokens.push_back(current_token.to_lowercase());
+  pub fn new(input: &str) -> Parser {
+    Parser {
+      // iter: Lexer::new(input).process(),//.peekable(),
+      tokens: Lexer::new(input).process(),
     }
   }
 
-  fn push_current_token_if_non_empty_and_capture_delimiter(&mut self, c: char) {
-    self.push_current_token_if_non_empty();
-    self.tokens.push_back(c.to_string());
-  }
-
-  fn is_discardable_delimiter(c: char) -> bool {
-    c.is_whitespace()
-  }
-
-  fn is_capturable_delimiter(c: char) -> bool {
-    c == '[' || c == ']'
-  }
-
-  // Current input must end at token boundary.
-  pub fn feed(&mut self, input: &str) {
-    for c in input.chars() {
-      match c {
-        _ if Parser::is_discardable_delimiter(c) => self.push_current_token_if_non_empty(),
-        _ if Parser::is_capturable_delimiter(c)  => self.push_current_token_if_non_empty_and_capture_delimiter(c),
-        _                                        => self.current_token.push(c),
-      };
+  fn process(&mut self) -> Expr {
+    loop {
+      // match self.iter.next() {
+      //   Token::Keyword("REPEAT".as_string()) => {
+      //     // Expr::Repeat(ValueExpr, Expr List)
+      //     // Repeat( parse next as value expr, parse next as expr list )
+      //   },
+      //   _ => {},
+      // }
     }
-    self.push_current_token_if_non_empty();
+    // let ret = match self.next_token().as_str() {
+    //   // TODO: Separate functions for parsing different expressions.
+    //   "fd" => Expr::Fd(self.next_token_as_f32()),
+    //   "bk" => Expr::Bk(self.next_token_as_f32()),
+    //   "rt" => Expr::Rt(self.next_token_as_f32()),
+    //   "lt" => Expr::Lt(self.next_token_as_f32()),
+    //   "cs" => Expr::Cs,
+    //   "repeat" => {
+    //     let count = self.next_token_as_u32();
+    //     let repeated_command = self.parse();
+    //     Expr::Repeat(count, Box::new(repeated_command))
+    //   },
+    //   "[" => {
+    //     // TODO: What if there's no "]" at the end?
+    //     // TODO: What if we have mismatched number of "[" and "]"?
+    //     let mut commands: Vec<Expr> = Vec::new();
+    //     while self.peek_token() != "]" {
+    //       commands.push(self.parse());
+    //     }
+    //     // Consume the "]".
+    //     assert!(self.next_token() == "]");
+    //     Expr::Block(commands)
+    //   },
+    //   _ => Expr::Unknown,
+    // };
+    // return ret;
   }
 
-  // TODO: Convert peek_token/next_token to return &str ?
-  fn has_tokens(&self) -> bool {
-    self.tokens.len() > 0
-  }
-
-  fn peek_token(&self) -> String {
-    self.tokens.front().unwrap().to_string()
-  }
-
-  fn next_token(&mut self) -> String {
-    self.tokens.pop_front().unwrap()
-  }
-
-  fn next_token_as_u32(&mut self) -> u32 {
-    self.next_token().parse::<u32>().unwrap_or(0)
-  }
-
-  fn next_token_as_f32(&mut self) -> f32 {
-    self.next_token().parse::<f32>().unwrap_or(0.0)
-  }
-
-  // Block(Vec<Command>),
-  // Repeat(u32, Box<Command>),
-
-  // TODO: Careful, might return more commands / or have leftover tokens.
-  fn parse(&mut self) -> Command {
-    let ret = match self.next_token().as_str() {
-      // TODO: Separate functions for parsing different expressions.
-      "fd" => Command::Fd(self.next_token_as_f32()),
-      "bk" => Command::Bk(self.next_token_as_f32()),
-      "rt" => Command::Rt(self.next_token_as_f32()),
-      "lt" => Command::Lt(self.next_token_as_f32()),
-      "cs" => Command::Cs,
-      "repeat" => {
-        let count = self.next_token_as_u32();
-        let repeated_command = self.parse();
-        Command::Repeat(count, Box::new(repeated_command))
-      },
-      "[" => {
-        // TODO: What if there's no "]" at the end?
-        // TODO: What if we have mismatched number of "[" and "]"?
-        let mut commands: Vec<Command> = Vec::new();
-        while self.peek_token() != "]" {
-          commands.push(self.parse());
-        }
-        // Consume the "]".
-        assert!(self.next_token() == "]");
-        Command::Block(commands)
-      },
-      _ => Command::Unknown,
-    };
-    return ret;
-  }
-
-  pub fn parse_all(&mut self) -> Vec<Command> {
-    let mut commands: Vec<Command> = Vec::new();
-    while self.has_tokens() {
-      commands.push(self.parse());
-    }
-    commands
-  }
+  // pub fn parse_all(&mut self) -> Vec<Expr> {
+  //   let mut commands: Vec<Expr> = Vec::new();
+  //   while self.has_tokens() {
+  //     commands.push(self.parse());
+  //   }
+  //   commands
+  // }
 }
 
 #[cfg(test)]
@@ -164,19 +136,108 @@ mod tests {
   }
 }
 
-fn main() {
-  #[allow(unused_variables)]
-  let str1 = " rePEat 4[fd 5 rt   90] [lt 5  fd 10 ] ";
-  let str2 = " REPEAT 4[fd 5 Rt   90 [ bK  10 FD 50] ] fd 10";
-  #[allow(unused_variables)]
-  let str3 = "fd "; // TODO: Crashes.
+// Shunting-yard algorithm (c) Edsger Dijkstra
+// Parse stuff like 1 + 5 % 3 * 3 - 4
 
-  // let mut input = String::new();
-  // std::io::stdin().read_line(&mut input).unwrap();
-  let mut parser = Parser::new();
+// while there are tokens to be read:
+//     read a token.
+//     if the token is a number, then:
+//         push it to the output queue.
+//     if the token is an operator, then:
+//         while (operator_stack.peek().precedence() >= current_op.precedence() &&
+//                op_stack.peek() != left_paren):
+//             output_queue.push(operator_stack.pop())
+//         operator_stack.push(current_op)
+//     if the token is a left bracket (i.e. "("), then:
+//         push it onto the operator stack.
+//     if the token is a right bracket (i.e. ")"), then:
+//         while the operator at the top of the operator stack is not a left bracket:
+//             pop the operator from the operator stack onto the output queue.
+//         pop the left bracket from the stack.
+//         /* if the stack runs out without finding a left bracket, then there are mismatched parentheses. */
+// if there are no more tokens to read:
+//     while there are still operator tokens on the stack:
+//         /* if the operator token on the top of the stack is a bracket, then there are mismatched parentheses. */
+//         pop the operator from the operator stack onto the output queue.
+// exit.
 
-  // parser.feed(str1);
-  parser.feed(str2);
-
-  println!("{:?}", parser.parse_all());
+fn precedence(token: &Token) -> u32 {
+  match token {
+    Token::Plus |
+      Token::Minus => { 0 },
+    Token::Multiply |
+      Token::Divide |
+      Token::Modulo => { 1 },
+    _ => { panic!("Invalid token for precedence!"); }
+  }
 }
+
+fn shunting_yard_algorithm(input: &str) -> (VecDeque<Token>, Vec<Token>) {
+  let tokens = Lexer::new(input).process().unwrap();
+  println!("{:?}", tokens);
+  let mut output_queue: VecDeque<Token> = VecDeque::new();
+  let mut operator_stack: Vec<Token> = Vec::new();
+  for token in tokens {
+    match token {
+      Token::Num(_) | Token::Float(_) => {
+        output_queue.push_back(token);
+      },
+      Token::Plus | Token::Minus | Token::Multiply | Token::Divide | Token::Modulo => {
+        while operator_stack.last() != Some(&Token::OpenParen) &&
+              precedence(operator_stack.last().unwrap()) >= precedence(&token) {
+          output_queue.push_back(operator_stack.pop().unwrap());
+        }
+        // while operator_stack.len() > 0 {
+        //   let top = operator_stack.last().unwrap().clone();
+        //   if *top != Token::OpenParen && precedence(top) >= precedence(&token) {
+        //     output_queue.push_back(operator_stack.pop().unwrap());
+        //   } else {
+        //     break;
+        //   }
+        // }
+        // while operator_stack.len() > 0 {
+        //   let top = operator_stack.last().unwrap().clone();
+        //   if top != Token::OpenParen && precedence(&top) >= precedence(&token) {
+        //     output_queue.push_back(operator_stack.pop().unwrap());
+        //   } else {
+        //     break;
+        //   }
+        // }
+        operator_stack.push(token);
+      },
+      Token::OpenParen => {
+        operator_stack.push(token);
+      },
+      Token::CloseParen => {
+        while operator_stack.last() != Some(&Token::OpenParen){
+          output_queue.push_back(operator_stack.pop().unwrap());
+        }
+        // TODO: pop can panic here if the expression is malformed
+        // (no OpenParen at top of stack)
+        assert_eq!(Token::OpenParen, operator_stack.pop().unwrap());
+      },
+      _ => { panic!("Unknown token!"); }
+    }
+  }
+  while let Some(op) = operator_stack.pop() {
+    output_queue.push_back(op);
+  }
+  (output_queue, operator_stack)
+}
+
+fn main() {
+  let input = "(1 + 5) % 3 * 3 - 4 / 1";
+
+  println!("{:?}", shunting_yard_algorithm(input));
+}
+
+// fn main() {
+//   let str1 = " rePEat 4[fd 5 rt   90] [lt 5  fd 10 ] ";
+//   let str2 = " REPEAT 4[fd 5 Rt   90 [ bK  10 FD 50] ] fd 10";
+//   let str3 = "fd "; // TODO: Crashes.
+
+//   // let mut input = String::new();
+//   // std::io::stdin().read_line(&mut input).unwrap();
+//   println!("{:?}", lexer::Lexer::new(str2).process());
+//   // println!("{:?}", Parser::new(str2).process());
+// }
