@@ -236,8 +236,8 @@ enum FB {
 }
 
 // Sometimes give back left (if last_op precedence >= current op precedence)
-fn foo(queue: &mut VecDeque<Token>, last_op: Option<Token>) -> FB {
-  let left;
+fn foo(queue: &mut VecDeque<Token>, last_op: Option<Token>) -> Result<FB, String> {
+  let mut left;
   let token = queue.pop_front();
   match token {
     Some(Token::Num(i)) => {
@@ -245,51 +245,65 @@ fn foo(queue: &mut VecDeque<Token>, last_op: Option<Token>) -> FB {
     },
     Some(Token::OpenParen) => {
       // (2 * 3 + 4) * 5 -> processes left upto closing paren
-      left = foo(queue, token);
-    },
-    // TODO: Merge these two.
-    None => {
-      panic!("missing operand after last_op {:?}", last_op);
+      left = foo(queue, token)?;
     },
     _ => {
-      panic!("Left must be an operand, got {:?}, last_op {:?}", token, last_op);
+      return Err(format!("missing operand or not an operand {:?} after last_op {:?}", token, last_op));
     }
   }
-  let token = queue.pop_front();
-  match token {
-    None => {
-      // Hit end, propagate left to parents right.
-      return left;
-    },
-    Some(Token::Num(_)) | Some(Token::OpenParen) => {
-      panic!("operand {:?} cannot follow left operand", queue.front().unwrap());
-    }
-    Some(Token::Plus) => {
-      // Plus always gives back left (upto paren).
-      if last_op.is_some() && last_op != Some(Token::OpenParen) {
-        return left;
+  loop {
+    let token = queue.front().cloned();
+    match token {
+      None => {
+        // Hit end, propagate left to parents right.
+        return Ok(left);
+      },
+      Some(Token::Plus) => {
+        // Plus always gives back left (upto paren).
+        if last_op.is_some() && last_op != Some(Token::OpenParen) {
+          // In this case don't eat the plus operator.
+          return Ok(left);
+        }
+        queue.pop_front();
+        left = FB::Plus(Box::new(left), Box::new(foo(queue, Some(Token::Plus))?));
+      },
+      Some(Token::Multiply) => {
+        // Multiply takes left.
+        queue.pop_front();
+        left = FB::Mult(Box::new(left), Box::new(foo(queue, Some(Token::Multiply))?));
+      },
+      Some(Token::CloseParen) => {
+        queue.pop_front();
+        return Ok(left);
+      },
+      Some(e @ Token::Num(_)) | Some(e @ Token::OpenParen) => {
+        return Err(format!("operand {:?} cannot follow left operand", e));
       }
-      return FB::Plus(Box::new(left), Box::new(foo(queue, token)));
-    },
-    Some(Token::Multiply) => {
-      // Multiply takes left.
-      return FB::Mult(Box::new(left), Box::new(foo(queue, token)));
-    },
-    Some(Token::CloseParen) => {
-      return left;
-    },
-    _ => {
-      panic!("Unknown token {:?}", queue.front().unwrap());
-    },
+      _ => {
+        return Err(format!("Unknown token {:?}", token));
+      },
+    }
   }
   // println!("{:?}", queue.front());
   // FB::Num(0)
 }
 
 fn pratt_parse_debug(input: &str) {
-  let tokens = Lexer::new(input).process().unwrap();
+  println!("{:?}", input);
+  let tokens;
+  match Lexer::new(input).process() {
+    Ok(val) => tokens = val,
+    Err(err) => { println!("Error: {:?}", err); return; }
+  }
   let mut queue: VecDeque<Token> = tokens.into_iter().collect();
-  println!("{:?}", foo(&mut queue, None));
+  match foo(&mut queue, None) {
+    Ok(val) => {
+      println!("{:?}", val);
+    },
+    Err(err) => {
+      println!("Error: {:?}", err);
+    },
+  }
 }
 
 fn main() {
@@ -298,10 +312,11 @@ fn main() {
   // 1 + (2 * (3 + 4 * 5) + 6 * (7 + 8)) * 9
   // let input = "1 + (2 * (3 + 4 * 5) + 6 * (7 + 8)) * 9";
   // let input = "1 + (2 * (3 + 4 * 5) + 6 + 7) * 8";
-  pratt_parse_debug("1 + 2 + 3");
-  pratt_parse_debug("1 + 2 * 3");
-  pratt_parse_debug("1 * 2 + 3");
-  pratt_parse_debug("1 * 2 * 3");
+  loop {
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input).unwrap();
+    pratt_parse_debug(input.trim());
+  }
 }
 
 // fn main() {
