@@ -246,6 +246,11 @@ fn foo(queue: &mut VecDeque<Token>, last_op: Option<Token>) -> Result<FB, String
     Some(Token::OpenParen) => {
       // (2 * 3 + 4) * 5 -> processes left upto closing paren
       left = foo(queue, token)?;
+      if queue.front() != Some(&Token::CloseParen) {
+        return Err(format!("unmatched open paren operand {:?} last_op {:?}", left, last_op));
+      }
+      // OpenParen consumes the CloseParen.
+      queue.pop_front();
     },
     _ => {
       return Err(format!("missing operand or not an operand {:?} after last_op {:?}", token, last_op));
@@ -268,12 +273,15 @@ fn foo(queue: &mut VecDeque<Token>, last_op: Option<Token>) -> Result<FB, String
         left = FB::Plus(Box::new(left), Box::new(foo(queue, Some(Token::Plus))?));
       },
       Some(Token::Multiply) => {
-        // Multiply takes left.
+        // Multiply takes left of next one.
         queue.pop_front();
         left = FB::Mult(Box::new(left), Box::new(foo(queue, Some(Token::Multiply))?));
       },
       Some(Token::CloseParen) => {
-        queue.pop_front();
+        // CloseParen propagates back until the last OpenParen which pops it.
+        if last_op.is_none() {
+          return Err(format!("unmatched close paren queue {:?}", queue));
+        }
         return Ok(left);
       },
       Some(e @ Token::Num(_)) | Some(e @ Token::OpenParen) => {
@@ -288,6 +296,27 @@ fn foo(queue: &mut VecDeque<Token>, last_op: Option<Token>) -> Result<FB, String
   // FB::Num(0)
 }
 
+fn rek_print(item: &FB, depth: i32) {
+  for i in 0 .. depth {
+    print!("  ");
+  }
+  match item {
+    FB::Num(i) => {
+      println!("{:?}", i);
+    },
+    FB::Plus(left, right) => {
+      println!("+");
+      rek_print(left, depth + 1);
+      rek_print(right, depth + 1);
+    },
+    FB::Mult(left, right) => {
+      println!("*");
+      rek_print(left, depth + 1);
+      rek_print(right, depth + 1);
+    },
+  }
+}
+
 fn pratt_parse_debug(input: &str) {
   println!("{:?}", input);
   let tokens;
@@ -299,6 +328,7 @@ fn pratt_parse_debug(input: &str) {
   match foo(&mut queue, None) {
     Ok(val) => {
       println!("{:?}", val);
+      rek_print(&val, 0);
     },
     Err(err) => {
       println!("Error: {:?}", err);
