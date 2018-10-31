@@ -255,7 +255,6 @@ fn foo(queue: &mut VecDeque<Token>, last_op: Option<Token>) -> FB {
       panic!("Left must be an operand, got {:?}, last_op {:?}", token, last_op);
     }
   }
-  let right;
   let token = queue.pop_front();
   match token {
     None => {
@@ -270,13 +269,11 @@ fn foo(queue: &mut VecDeque<Token>, last_op: Option<Token>) -> FB {
       if last_op.is_some() && last_op != Some(Token::OpenParen) {
         return left;
       }
-      right = foo(queue, token);
-      return FB::Plus(Box::new(left), Box::new(right));
+      return FB::Plus(Box::new(left), Box::new(foo(queue, token)));
     },
     Some(Token::Multiply) => {
       // Multiply takes left.
-      right = foo(queue, token);
-      return FB::Mult(Box::new(left), Box::new(right));
+      return FB::Mult(Box::new(left), Box::new(foo(queue, token)));
     },
     Some(Token::CloseParen) => {
       return left;
@@ -289,18 +286,22 @@ fn foo(queue: &mut VecDeque<Token>, last_op: Option<Token>) -> FB {
   // FB::Num(0)
 }
 
+fn pratt_parse_debug(input: &str) {
+  let tokens = Lexer::new(input).process().unwrap();
+  let mut queue: VecDeque<Token> = tokens.into_iter().collect();
+  println!("{:?}", foo(&mut queue, None));
+}
+
 fn main() {
   // let input = "(1 + 5) % 3 * 3 - 4 / 1";
   // 1 2 3 4 5 * + * 6 7 8 + * + 9 * +
   // 1 + (2 * (3 + 4 * 5) + 6 * (7 + 8)) * 9
   // let input = "1 + (2 * (3 + 4 * 5) + 6 * (7 + 8)) * 9";
   // let input = "1 + (2 * (3 + 4 * 5) + 6 + 7) * 8";
-  let input = "1 + 2 + 3";
-  let tokens = Lexer::new(input).process().unwrap();
-  let mut queue: VecDeque<Token> = tokens.into_iter().collect();
-
-  // println!("{:?}", shunting_yard_algorithm(input));
-  println!("{:?}", foo(&mut queue, None));
+  pratt_parse_debug("1 + 2 + 3");
+  pratt_parse_debug("1 + 2 * 3");
+  pratt_parse_debug("1 * 2 + 3");
+  pratt_parse_debug("1 * 2 * 3");
 }
 
 // fn main() {
