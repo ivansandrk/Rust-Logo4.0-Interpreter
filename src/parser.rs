@@ -278,7 +278,7 @@ fn foo(queue: &mut VecDeque<Token>, last_op: Option<Token>) -> Result<FB, String
         left = FB::Mult(Box::new(left), Box::new(foo(queue, Some(Token::Multiply))?));
       },
       Some(Token::CloseParen) => {
-        // CloseParen propagates back until the last OpenParen which pops it.
+        // CloseParen propagates back until the last OpenParen which consumes it.
         if last_op.is_none() {
           return Err(format!("unmatched close paren queue {:?}", queue));
         }
