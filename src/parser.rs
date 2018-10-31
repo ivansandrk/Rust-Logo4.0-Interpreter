@@ -5,6 +5,7 @@
 // - ListExpr?
 // - List type definitely
 #![allow(unused_variables)]
+#![allow(dead_code)]
 
 mod lexer;
 
@@ -225,10 +226,81 @@ fn shunting_yard_algorithm(input: &str) -> (VecDeque<Token>, Vec<Token>) {
   (output_queue, operator_stack)
 }
 
-fn main() {
-  let input = "(1 + 5) % 3 * 3 - 4 / 1";
+// Focus just on ()+*
 
-  println!("{:?}", shunting_yard_algorithm(input));
+#[derive(Debug)]
+enum FB {
+  Num(i32),
+  Plus(Box<FB>, Box<FB>),
+  Mult(Box<FB>, Box<FB>),
+}
+
+// Sometimes give back left (if last_op precedence >= current op precedence)
+fn foo(queue: &mut VecDeque<Token>, last_op: Option<Token>) -> FB {
+  let left;
+  let token = queue.pop_front();
+  match token {
+    Some(Token::Num(i)) => {
+      left = FB::Num(i);
+    },
+    Some(Token::OpenParen) => {
+      // (2 * 3 + 4) * 5 -> processes left upto closing paren
+      left = foo(queue, token);
+    },
+    // TODO: Merge these two.
+    None => {
+      panic!("missing operand after last_op {:?}", last_op);
+    },
+    _ => {
+      panic!("Left must be an operand, got {:?}, last_op {:?}", token, last_op);
+    }
+  }
+  let right;
+  let token = queue.pop_front();
+  match token {
+    None => {
+      // Hit end, propagate left to parents right.
+      return left;
+    },
+    Some(Token::Num(_)) | Some(Token::OpenParen) => {
+      panic!("operand {:?} cannot follow left operand", queue.front().unwrap());
+    }
+    Some(Token::Plus) => {
+      // Plus always gives back left (upto paren).
+      if last_op.is_some() && last_op != Some(Token::OpenParen) {
+        return left;
+      }
+      right = foo(queue, token);
+      return FB::Plus(Box::new(left), Box::new(right));
+    },
+    Some(Token::Multiply) => {
+      // Multiply takes left.
+      right = foo(queue, token);
+      return FB::Mult(Box::new(left), Box::new(right));
+    },
+    Some(Token::CloseParen) => {
+      return left;
+    },
+    _ => {
+      panic!("Unknown token {:?}", queue.front().unwrap());
+    },
+  }
+  // println!("{:?}", queue.front());
+  // FB::Num(0)
+}
+
+fn main() {
+  // let input = "(1 + 5) % 3 * 3 - 4 / 1";
+  // 1 2 3 4 5 * + * 6 7 8 + * + 9 * +
+  // 1 + (2 * (3 + 4 * 5) + 6 * (7 + 8)) * 9
+  // let input = "1 + (2 * (3 + 4 * 5) + 6 * (7 + 8)) * 9";
+  // let input = "1 + (2 * (3 + 4 * 5) + 6 + 7) * 8";
+  let input = "1 + 2 + 3";
+  let tokens = Lexer::new(input).process().unwrap();
+  let mut queue: VecDeque<Token> = tokens.into_iter().collect();
+
+  // println!("{:?}", shunting_yard_algorithm(input));
+  println!("{:?}", foo(&mut queue, None));
 }
 
 // fn main() {
