@@ -1,8 +1,6 @@
-// *
-// - token for whitespace? it's possible newline is needed. it is indeed.
 // - implement Iter(able) on Lexer
-// - get rid of SIMPLE_TOKEN_MAP and fold it into the main match?
 // - forgo Strings, use &str everywhere
+// keywords go in parser, or maybe even evaluator
 
 // Need to import used modules.  If you use things like "std::str::Chars"
 // then you need to import std (use std).
@@ -15,31 +13,10 @@ use std::collections::HashMap;
 use std::iter::FromIterator;
 use std::mem::replace;
 
-const DELIMITERS: &str = "()[]{}+-*/%<>= \\\n";
-const SIMPLE_TOKEN_MAP: &[(char, Token)] = &[
-  ('\n', Token::Line),
-  ('\\', Token::LineCont),
-  ('+', Token::Plus),
-  ('-', Token::Minus),
-  ('*', Token::Multiply),
-  ('%', Token::Modulo),
-  ('/', Token::Divide),
-  ('(', Token::OpenParen),
-  (')', Token::CloseParen),
-  ('[', Token::OpenBracket),
-  (']', Token::CloseBracket),
-  ('{', Token::OpenBrace),
-  ('}', Token::CloseBrace),
-  ('<', Token::Less),
-  ('>', Token::Greater),
-  ('=', Token::Equal),
-];
-// TODO: Purposeful error in FORWARD just to see how the whole program
-// deals with it.
 // GRAPHICS
 // ...
 const KEYWORDS: &str = "
-  FD FFORWARD BK BACK LT LEFT RT RIGHT
+  FD FORWARD BK BACK LT LEFT RT RIGHT
   SETPOS SETXY SETX SETY SETHEADING HOME ARC
   GETXY POS XCOR YCOR HEADING TOWARDS
   SCRUNCH SETSCRUNCH
@@ -67,21 +44,18 @@ const KEYWORDS: &str = "
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
-  // TODO: Lexer needs to give parser Line knowledge.
-  // Probably don't need both Line and LineCont, just Line is enough.
-  // But if Lexer is getting just one line then it cannot tell.
   Line,
   LineCont,
 
-  // TODO: Word can be function or var.  What about strings?
+  // Used for assignment (MAKE "A 5) or as a word.
   Word(String),
-  Keyword(String),
-
-  // Numbers and variables.
+  // Can be builtin or user defined.
+  Function(String),
+  // TO FOO :A :B, or FD :A
+  Var(String),
+  // Numbers (I think all numbers are float in PC Logo 4.0 actually).
   Num(i32),
   Float(f32),
-  Var(String), // :R
-  Assignment(String), // MAKE "O 123
 
   // Arithmetic operators.
   Plus,
@@ -91,20 +65,23 @@ pub enum Token {
   Modulo,
 
   // Brackets.
-  OpenParen,
-  CloseParen,
-  OpenBracket,
-  CloseBracket,
-  OpenBrace,
-  CloseBrace,
+  LParen,
+  RParen,
+  LBracket,
+  RBracket,
+  LBrace,
+  RBrace,
 
   // Comparison.
   Less,
+  LessEq,
   Greater,
+  GreaterEq,
   Equal,
 
   // Not known yet.
   Unknown,
+  None,
 }
 
 pub struct Lexer<'a> {
@@ -128,15 +105,6 @@ impl<'a> Lexer<'a> {
 
   fn error(&mut self, info: &str) -> Result<String, String> {
     Err(format!("Error at pos {},{}: {}", self.row, self.col, info))
-  }
-
-  fn check_error_delimiter(&mut self, word: &str) -> Result<(), String> {
-    if let Some(c) = self.peek_char() {
-      if !self.is_delimiter(c) {
-        self.error(&format!("invalid delimiter '{}' after token '{}'", c, word))?;
-      }
-    }
-    Ok(())
   }
 
   fn peek_char(&mut self) -> Option<char> {
@@ -169,84 +137,29 @@ impl<'a> Lexer<'a> {
     }
   }
 
-  fn is_delimiter(&mut self, c: char) -> bool {
-    DELIMITERS.contains(c)
-  }
-
-  // [a-z][a-z0-9]*[?]?
+  // ?_.[a-z][A-Z][0-9]
   fn next_word(&mut self) -> Result<String, String> {
     let mut word = String::new();
-    // Must start with [a-z].
-    if let Some(c) = self.peek_char() {
-      if !c.is_alphabetic() {
-        self.error(&format!("word starts with a letter, got '{}'", c))?;
+    loop {
+      let c = self.peek_char();
+      match c {
+        None => { break; },
+        Some(c @ 'a' ... 'z') |
+        Some(c @ 'A' ... 'Z') |
+        Some(c @ '0' ... '9') |
+        Some(c @ '_') |
+        Some(c @ '.') |
+        Some(c @ '?') => {
+          self.next_char();
+          word.push(c.to_ascii_uppercase());
+        },
+        _ => { break; }
       }
-    }
-    // Collect [a-z0-9].
-    while let Some(c) = self.peek_char() {
-      if !c.is_alphanumeric() {
-        break;
-      }
-      word.push(c.to_ascii_uppercase());
-      self.next_char();
-    }
-    if word.len() == 0 {
-      self.error(&format!("missing word"))?;
-    }
-    if let Some('?') = self.peek_char() {
-      word.push('?');
-      self.next_char();
-    }
-    self.check_error_delimiter(word.as_str())?;
-    // Only keywords can end with a '?'.
-    if word.ends_with('?') && !self.keyword_set.contains(word.as_str()) {
-      self.error(&format!("identifier cannot end with a ? {}", word))?;
     }
     Ok(word)
   }
 
-  // 123, 3.5, .5 , 1.; . -> error.
-  // Collect digits and periods -> digits{1,}, periods{,1}
-  fn next_number(&mut self) -> Result<Token, String> {
-    let mut num = String::new();
-    let mut digits = 0;
-    let mut periods = 0;
-    loop {
-      match self.peek_char() {
-        None => {
-          break;
-        },
-        Some(c) => {
-          if !c.is_digit(10) && c != '.' {
-            break;
-          }
-          num.push(c);
-          if c == '.' {
-            periods += 1;
-          } else {
-            digits += 1;
-          }
-        }
-      }
-      self.next_char();
-    }
-    self.check_error_delimiter(num.as_str())?;
-    if digits < 1 || periods > 1 {
-      self.error(&format!("invalid number '{}'", num))?;
-    }
-    if periods == 1 {
-      // TODO: Get rid of unwrap here after some testing.
-      Ok(Token::Float(num.parse::<f32>().unwrap()))
-    } else {
-      // TODO: Get rid of unwrap here after some testing.
-      Ok(Token::Num(num.parse::<i32>().unwrap()))
-    }
-  }
-
   pub fn process(&mut self) -> Result<Vec<Token>, String> {
-    let simple_token_map: HashMap<char, Token> =
-        SIMPLE_TOKEN_MAP.iter().cloned().collect();
-
     loop {
       // Skip that pesky whitespace!
       self.skip_whitespace();
@@ -258,40 +171,62 @@ impl<'a> Lexer<'a> {
         Some(x) => { c = x; },
       }
 
-      // Simple one char token, emit it immediately and go to next one.
-      if let Some(token) = simple_token_map.get(&c) {
-        self.tokens.push(token.clone());
-        self.next_char();
-        continue;
-      }
-
       let token: Token;
       match c {
+        '\n' => { self.next_char(); token = Token::Line; },
+        '\\' => { self.next_char(); token = Token::LineCont; },
+        '+' => { self.next_char(); token = Token::Plus; },
+        '-' => { self.next_char(); token = Token::Minus; },
+        '*' => { self.next_char(); token = Token::Multiply; },
+        '%' => { self.next_char(); token = Token::Modulo; },
+        '/' => { self.next_char(); token = Token::Divide; },
+        '(' => { self.next_char(); token = Token::LParen; },
+        ')' => { self.next_char(); token = Token::RParen; },
+        '[' => { self.next_char(); token = Token::LBracket; },
+        ']' => { self.next_char(); token = Token::RBracket; },
+        '{' => { self.next_char(); token = Token::LBrace; },
+        '}' => { self.next_char(); token = Token::RBrace; },
+        '=' => { self.next_char(); token = Token::Equal; },
+        '<' => {
+          self.next_char();
+          if self.peek_char() == Some('=') {
+            self.next_char();
+            token = Token::LessEq;
+          } else {
+            token = Token::Less;
+          }
+        },
+        '>' => {
+          self.next_char();
+          if self.peek_char() == Some('=') {
+            self.next_char();
+            token = Token::GreaterEq;
+          } else {
+            token = Token::Greater;
+          }
+        },
         ':' => {
           self.next_char();
           token = Token::Var(self.next_word()?);
         },
         '"' => {
           self.next_char();
-          token = Token::Assignment(self.next_word()?);
-        },
-        // TODO: Probably need to think about 0xA3, 0b1101, 0o70.
-        _ if c.is_digit(10) || c == '.' => {
-          // Integer or floating point number.
-          token = self.next_number()?;
-        },
-        _ if c.is_alphabetic() => {
-          let word = self.next_word()?;
-          token = if self.keyword_set.contains(word.as_str()) {
-              Token::Keyword(word)
-          } else {
-              Token::Word(word)
-          };
+          token = Token::Word(self.next_word()?);
         },
         _ => {
-          self.error(&format!("unknown char '{}'", c))?;
-          token = Token::Unknown;
-        },
+          let word = self.next_word()?;
+          if let Ok(num) = word.parse::<i32>() {
+            token = Token::Num(num);
+          } else if let Ok(num) = word.parse::<f32>() {
+            token = Token::Float(num);
+          } else {
+            if word.len() == 0 && self.peek_char().is_some() {
+              let f = &format!("unknown char {:?}", self.peek_char().unwrap());
+              self.error(f)?;
+            }
+            token = Token::Function(word);
+          }
+        }
       }
       self.tokens.push(token);
     }
@@ -318,70 +253,51 @@ mod tests {
   }
 
   #[test]
-  fn word_doesnt_start_with_a_letter() {
-    test_err("fd :2BAR",
-             "Error at pos 0,4: word starts with a letter, got '2'");
+  fn unknown_char() {
+    test_err("fd 20`~",
+             "Error at pos 0,5: unknown char '`'");
   }
 
   #[test]
-  fn missing_word() {
-    test_err("MaKE \"",
-             "Error at pos 0,6: missing word");
-  }
-
-  #[test]
-  fn word_bad_delimiter() {
-    test_err("EMPTY?5 FD",
-             "Error at pos 0,6: invalid delimiter '5' after token 'EMPTY?'");
-  }
-
-  #[test]
-  fn function_identifier_cannot_end_with_question_mark() {
-    test_err("TO FOO? :BAR",
-             "Error at pos 0,7: identifier cannot end with a ? FOO?");
-  }
-
-  #[test]
-  fn var_identifier_cannot_end_with_question_mark() {
-    test_err("TO FOO :BAR?",
-             "Error at pos 0,12: identifier cannot end with a ? BAR?");
-  }
-
-  #[test]
-  fn keyword_can_end_with_question_mark() {
-    test_ok("shown? []", &[
-      Token::Keyword("SHOWN?".to_string()),
-      Token::OpenBracket,
-      Token::CloseBracket,
+  fn var() {
+    test_ok("TO FOO :A\nFD :A\nEND", &[
+      Token::Function("TO".to_string()),
+      Token::Function("FOO".to_string()),
+      Token::Var("A".to_string()),
+      Token::Line,
+      Token::Function("FD".to_string()),
+      Token::Var("A".to_string()),
+      Token::Line,
+      Token::Function("END".to_string()),
     ]);
   }
 
   #[test]
-  fn number_bad_delimiter() {
-    test_err("fd 50a",
-             "Error at pos 0,5: invalid delimiter 'a' after token '50'");
+  fn word() {
+    test_ok("MAKE \"ASD \"SOMETHING", &[
+      Token::Function("MAKE".to_string()),
+      Token::Word("ASD".to_string()),
+      Token::Word("SOMETHING".to_string()),
+    ]);
   }
 
   #[test]
-  fn number_too_many_periods() {
-    test_err("fd 50.4.",
-             "Error at pos 0,8: invalid number '50.4.'");
-  }
-
-  #[test]
-  fn number_no_digits() {
-    test_err("rt \n.",
-             "Error at pos 1,1: invalid number '.'");
+  fn function() {
+    test_ok("shown? []", &[
+      Token::Function("SHOWN?".to_string()),
+      Token::LBracket,
+      Token::RBracket,
+    ]);
   }
 
   #[test]
   fn number_float() {
     test_ok("bk 50.5 rt  .5 fd 19.", &[
-      Token::Keyword("BK".to_string()),
+      Token::Function("BK".to_string()),
       Token::Float(50.5),
-      Token::Keyword("RT".to_string()),
+      Token::Function("RT".to_string()),
       Token::Float(0.5),
-      Token::Keyword("FD".to_string()),
+      Token::Function("FD".to_string()),
       Token::Float(19.),
     ]);
   }
@@ -389,33 +305,27 @@ mod tests {
   #[test]
   fn number_num() {
     test_ok("repeat \n 50[", &[
-      Token::Keyword("REPEAT".to_string()),
+      Token::Function("REPEAT".to_string()),
       Token::Line,
       Token::Num(50),
-      Token::OpenBracket,
+      Token::LBracket,
     ]);
-  }
-
-  #[test]
-  fn unknown_token() {
-    test_err("fd 5 `",
-             "Error at pos 0,5: unknown char '`'");
   }
 
   #[test]
   fn line_cont() {
     test_ok ("REPEAT 4 [FD 40\\\nRT 90]fd 50\n", &[
-      Token::Keyword("REPEAT".to_string()),
+      Token::Function("REPEAT".to_string()),
       Token::Num(4),
-      Token::OpenBracket,
-      Token::Keyword("FD".to_string()),
+      Token::LBracket,
+      Token::Function("FD".to_string()),
       Token::Num(40),
       Token::LineCont,
       Token::Line,
-      Token::Keyword("RT".to_string()),
+      Token::Function("RT".to_string()),
       Token::Num(90),
-      Token::CloseBracket,
-      Token::Keyword("FD".to_string()),
+      Token::RBracket,
+      Token::Function("FD".to_string()),
       Token::Num(50),
       Token::Line,
     ]);
