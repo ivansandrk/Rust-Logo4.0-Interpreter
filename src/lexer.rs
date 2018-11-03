@@ -44,8 +44,10 @@ const KEYWORDS: &str = "
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
-  Line,
-  LineCont,
+  Line, // \n
+  LineCont, // \\n
+  Escape, // \ without a following newline
+  Whitespace, // A block (1+ chars) of non-newline whitespace.
 
   // Used for assignment (MAKE "A 5) or as a word.
   Word(String),
@@ -131,13 +133,20 @@ impl<'a> Lexer<'a> {
     next
   }
 
-  fn skip_whitespace(&mut self) {
+  fn skip_whitespace(&mut self) -> bool {
+    let mut skipped = false;
     while let Some(c) = self.peek_char() {
       match c {
-        ' ' | '\t' => { self.next_char(); },
-        _          => { break; }
+        ' ' | '\t' => {
+          self.next_char();
+          skipped = true;
+        },
+        _ => {
+          break;
+        }
       }
     }
+    skipped
   }
 
   // ?_.[a-z][A-Z][0-9]
@@ -164,8 +173,10 @@ impl<'a> Lexer<'a> {
 
   pub fn process(&mut self) -> Result<Vec<Token>, String> {
     loop {
-      // Skip that pesky whitespace!
-      self.skip_whitespace();
+      // Skip whitespace, but collect the token as it might be needed in the parser.
+      if self.skip_whitespace() {
+        self.tokens.push(Token::Whitespace);
+      }
 
       // No more input, we're done.
       let c: char;
@@ -177,7 +188,15 @@ impl<'a> Lexer<'a> {
       let token: Token;
       match c {
         '\n' => { self.next_char(); token = Token::Line; },
-        '\\' => { self.next_char(); token = Token::LineCont; },
+        '\\' => {
+          self.next_char();
+          if self.peek_char() == Some('\n') {
+            self.next_char();
+            token = Token::LineCont;
+          } else {
+            token = Token::Escape;
+          }
+        },
         '+' => { self.next_char(); token = Token::Plus; },
         '-' => { self.next_char(); token = Token::Minus; },
         '*' => { self.next_char(); token = Token::Multiply; },
