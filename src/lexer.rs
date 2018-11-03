@@ -64,6 +64,9 @@ pub enum Token {
   Divide,
   Modulo,
 
+  // Unary.
+  Negation,
+
   // Brackets.
   LParen,
   RParen,
