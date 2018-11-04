@@ -284,10 +284,13 @@ mod tests {
   fn var() {
     test_ok("TO FOO :A\nFD :A\nEND", &[
       Token::Function("TO".to_string()),
+      Token::Whitespace,
       Token::Function("FOO".to_string()),
+      Token::Whitespace,
       Token::Var("A".to_string()),
       Token::Line,
       Token::Function("FD".to_string()),
+      Token::Whitespace,
       Token::Var("A".to_string()),
       Token::Line,
       Token::Function("END".to_string()),
@@ -298,7 +301,9 @@ mod tests {
   fn word() {
     test_ok("MAKE \"ASD \"SOMETHING", &[
       Token::Function("MAKE".to_string()),
+      Token::Whitespace,
       Token::Word("ASD".to_string()),
+      Token::Whitespace,
       Token::Word("SOMETHING".to_string()),
     ]);
   }
@@ -307,6 +312,7 @@ mod tests {
   fn function() {
     test_ok("shown? []", &[
       Token::Function("SHOWN?".to_string()),
+      Token::Whitespace,
       Token::LBracket,
       Token::RBracket,
     ]);
@@ -316,10 +322,15 @@ mod tests {
   fn number_float() {
     test_ok("bk 50.5 rt  .5 fd 19.", &[
       Token::Function("BK".to_string()),
+      Token::Whitespace,
       Token::Float(50.5),
+      Token::Whitespace,
       Token::Function("RT".to_string()),
+      Token::Whitespace,
       Token::Float(0.5),
+      Token::Whitespace,
       Token::Function("FD".to_string()),
+      Token::Whitespace,
       Token::Float(19.),
     ]);
   }
@@ -328,7 +339,9 @@ mod tests {
   fn number_num() {
     test_ok("repeat \n 50[", &[
       Token::Function("REPEAT".to_string()),
+      Token::Whitespace,
       Token::Line,
+      Token::Whitespace,
       Token::Num(50),
       Token::LBracket,
     ]);
@@ -338,16 +351,20 @@ mod tests {
   fn line_cont() {
     test_ok ("REPEAT 4 [FD 40\\\nRT 90]fd 50\n", &[
       Token::Function("REPEAT".to_string()),
+      Token::Whitespace,
       Token::Num(4),
+      Token::Whitespace,
       Token::LBracket,
       Token::Function("FD".to_string()),
+      Token::Whitespace,
       Token::Num(40),
       Token::LineCont,
-      Token::Line,
       Token::Function("RT".to_string()),
+      Token::Whitespace,
       Token::Num(90),
       Token::RBracket,
       Token::Function("FD".to_string()),
+      Token::Whitespace,
       Token::Num(50),
       Token::Line,
     ]);

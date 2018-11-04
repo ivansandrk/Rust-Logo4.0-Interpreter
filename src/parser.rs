@@ -184,14 +184,39 @@ fn precedence(token: &Option<Token>) -> i32 {
 // for function names.
 fn foo(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result<AST, String> {
   let mut left;
+  if queue.front() == Some(&Token::Whitespace) {
+    queue.pop_front();
+  }
   let token = queue.pop_front();
   match token {
     Some(Token::Num(i)) => {
       left = AST::Leaf(i);
     },
     Some(Token::Minus) => {
-      let operand = foo(queue, &token)?;
-      left = AST::Unary(token.unwrap(), Box::new(operand));
+      match queue.front() {
+        Some(&Token::Whitespace) => {
+          // Prefix-style subtraction: - 5 2.
+          queue.pop_front();
+          let left_operand = foo(queue, &None)?;
+          let right_operand = foo(queue, &None)?;
+          left = AST::Binary(token.unwrap(), Box::new(left_operand), Box::new(right_operand));
+        },
+        Some(&Token::Num(_)) | Some(&Token::LParen) => {
+          let operand = foo(queue, &Some(Token::Negation))?;
+          left = AST::Unary(Token::Negation, Box::new(operand));
+        },
+        _ => {
+          return Err(format!("bad token after Minus queue {:?}", queue));
+        }
+      }
+    },
+    Some(Token::Plus) |
+    Some(Token::Multiply) |
+    Some(Token::Divide) |
+    Some(Token::Modulo) => {
+      let left_operand = foo(queue, &None)?;
+      let right_operand = foo(queue, &None)?;
+      left = AST::Binary(token.unwrap(), Box::new(left_operand), Box::new(right_operand));
     },
     Some(Token::LParen) => {
       left = foo(queue, &token)?;
@@ -201,8 +226,11 @@ fn foo(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result<AST, S
       }
     },
     _ => {
-      return Err(format!("missing operand or not an operand {:?} after last_token {:?}", token, last_token));
+      return Err(format!("missing operand or not an operand {:?} last_token {:?} queue {:?}", token, last_token, queue));
     }
+  }
+  if last_token == &Some(Token::Negation) {
+    return Ok(left);
   }
   loop {
     let token = queue.front().cloned();
@@ -211,6 +239,16 @@ fn foo(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result<AST, S
         // Hit end, propagate left to parents right.
         return Ok(left);
       },
+      Some(Token::Whitespace) => {
+        if queue.len() >= 3 && queue[0] == Token::Whitespace &&
+           queue[1] == Token::Minus && queue[2] != Token::Whitespace {
+          // Next one is unary minus, return here.
+          return Ok(left);
+        } else {
+          // Eat whitespace and continue onto next iteration of loop.
+          queue.pop_front();
+        }
+      },
       Some(Token::Plus) |
       Some(Token::Minus) |
       Some(Token::Multiply) |
@@ -218,10 +256,6 @@ fn foo(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result<AST, S
       Some(Token::Modulo) => {
         // Give the left operand back to the previous operator if the precedence is higher
         // or equal.
-        // TODO: Make sure A && B evaluation order in Rust is A first, only then lazy B.
-        // if last_token != &Some(Token::LParen) &&
-        //     precedence(last_token)? >= precedence(&token)? {
-        // let operator = token_to_operator(&token, false);
         if precedence(last_token) >= precedence(&token) {
           return Ok(left);
         }
@@ -238,7 +272,7 @@ fn foo(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result<AST, S
         return Ok(left);
       },
       Some(e @ Token::Num(_)) | Some(e @ Token::LParen) => {
-        return Err(format!("operand {:?} cannot follow left operand", e));
+        return Ok(left);
       }
       _ => {
         return Err(format!("Unknown token {:?}", token));
@@ -273,6 +307,7 @@ fn pratt_parse_debug(input: &str) {
     Err(err) => { println!("Tokenizing error: {:?}", err); return; }
   }
   let mut queue: VecDeque<Token> = tokens.into_iter().collect();
+  println!("{:?}", queue);
   match foo(&mut queue, &None) {
     Ok(val) => {
       println!("{:?}", val);
