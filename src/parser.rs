@@ -4,6 +4,9 @@
 // - NoneExpr?
 // - ListExpr?
 // - List type definitely
+// - Logo has separate function and variable definitions.  It doesn't like builtin names for function names.
+
+
 #![allow(unused_variables)]
 #![allow(dead_code)]
 
@@ -74,7 +77,6 @@ impl Parser {
       // }
     }
     // let ret = match self.next_token().as_str() {
-    //   // TODO: Separate functions for parsing different expressions.
     //   "fd" => Expr::Fd(self.next_token_as_f32()),
     //   "bk" => Expr::Bk(self.next_token_as_f32()),
     //   "rt" => Expr::Rt(self.next_token_as_f32()),
@@ -86,8 +88,6 @@ impl Parser {
     //     Expr::Repeat(count, Box::new(repeated_command))
     //   },
     //   "[" => {
-    //     // TODO: What if there's no "]" at the end?
-    //     // TODO: What if we have mismatched number of "[" and "]"?
     //     let mut commands: Vec<Expr> = Vec::new();
     //     while self.peek_token() != "]" {
     //       commands.push(self.parse());
@@ -168,7 +168,7 @@ enum AST {
   Prefix(Token, ExprList),  // Prefix style arithmetic operations, ie. + 3 5 = 8.
   // Int(i32),  // TODO: Have both int and float num types.
   Float(f32),
-  DefFunction(String, ExprList, ExprList),  // name, input args (all Var), body
+  DefFunction(String, ExprList, ExprLines),  // name, input args (all Var), body
   CallFunction(String),  // name
   Var(String),  // :ASD
   Word(String),  // "BIRD
@@ -218,6 +218,8 @@ fn parse_left(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result
       left = AST::Float(f);
     },
     Some(Token::Function(name)) => {
+      // TODO: Everything after this function should probably be captured in an ExprList.
+      //       And then I might not need no_right anymore.
       // TODO: Special Function "TO FOO :A :B\n...\nEND" -> have a special function for parsing it.
       return Ok((AST::CallFunction(name), true));
     },
@@ -229,6 +231,7 @@ fn parse_left(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result
     },
     Some(Token::LParen) => {
       let mut expr_list = ExprList::new();
+      // TODO: This and LBracket shouldn't go past Token::Line.
       while queue.len() > 0 && queue.front() != Some(&Token::RParen) {
         expr_list.push(parse_one(queue, &token)?);
       }
@@ -240,7 +243,7 @@ fn parse_left(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result
     },
     Some(Token::LBracket) => {
       let mut list = VecDeque::new();
-      while queue.front().is_some() && queue.front() != Some(&Token::RBracket) {
+      while queue.len() > 0 && queue.front() != Some(&Token::RBracket) {
         list.push_back(parse_one(queue, &token)?);
       }
       // RBracket is next, and it's consumed by this LBracket.
@@ -283,12 +286,6 @@ fn parse_left(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result
   return Ok((left, false));
 }
 
-fn parse_right(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result<AST, String> {
-  return Err("Not implemented".to_string());
-}
-
-// Logo has separate function and variable definitions.  It doesn't like builtin names
-// for function names.
 fn parse_one(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result<AST, String> {
 println!("start {:?} {:?}", queue, last_token);
   let (mut left, no_right) = parse_left(queue, last_token)?;
@@ -297,9 +294,9 @@ println!("start {:?} {:?}", queue, last_token);
   }
 
   loop {
-    // TODO: Get rid of the cloned() here.
-    let token = queue.front().cloned();
-    match token {
+    let mut eat_whitespace = false;
+    // Deals with left-only tokens, right brackets, and lookahead for unary minus / negation.
+    match queue.front() {
       // Left only tokens.
       None |  // Hit end, propagate left to parents right.
       Some(Token::Line) |
@@ -313,14 +310,22 @@ println!("start {:?} {:?}", queue, last_token);
         return Ok(left);
       }
       Some(Token::Whitespace) => {
-        if queue.len() >= 3 && queue[0] == Token::Whitespace &&
-           queue[1] == Token::Minus && queue[2] != Token::Whitespace {
+        if queue.len() >= 3 && queue[1] == Token::Minus && queue[2] != Token::Whitespace {
           // Next one is unary minus, return here.
           return Ok(left);
         } else {
           // Eat whitespace and continue onto next iteration of loop.
-          queue.pop_front();
+          eat_whitespace = true;
         }
+      },
+      Some(e @ Token::RParen) |
+      Some(e @ Token::RBracket) => {
+        // RParen/RBracket propagates back until the last left one which consumes it.
+        // TODO: Logo parses "repeat 4 [fd 50 rt 90" just fine.
+        if last_token.is_none() {
+          return Err(format!("unmatched right bracket {:?} queue {:?} last_token {:?}", e, queue, last_token));
+        }
+        return Ok(left);
       },
       Some(Token::Plus) |
       Some(Token::Minus) |
@@ -332,33 +337,28 @@ println!("start {:?} {:?}", queue, last_token);
       Some(Token::Greater) |
       Some(Token::GreaterEq) |
       Some(Token::Equal) => {
-        // Give the left operand back to the previous operator if the precedence is higher
-        // or equal.
-        if precedence(last_token) >= precedence(&token) {
-          return Ok(left);
-        }
-        queue.pop_front();
-        let right = parse_one(queue, &token)?;
-        left = AST::Binary(token.unwrap(), Box::new(left), Box::new(right));
-      },
-      Some(Token::RParen) => {
-        // RParen propagates back until the last LParen which consumes it.
-        if last_token.is_none() {
-          return Err(format!("unmatched right paren queue {:?}", queue));
-        }
-        return Ok(left);
-      },
-      Some(Token::RBracket) => {
-        // RBracket goes back to LParen.
-        if last_token.is_none() {
-          return Err(format!("unmatched right bracket queue {:?} last_token {:?}", queue, last_token));
-        }
-        return Ok(left);
+        // Needs parsing, handled just below this match.
       },
       _ => {
-        return Err(format!("Unknown token {:?}", token));
+        return Err(format!("Unknown token {:?}", queue.front()));
       },
     }
+
+    if eat_whitespace {
+      queue.pop_front();
+      continue;
+    }
+
+    // TODO: Get rid of cloned (dependent on precedence function).
+    let token = queue.front().cloned();
+    // Give the left operand back to the previous operator if the precedence is higher
+    // or equal.
+    if precedence(last_token) >= precedence(&token) {
+      return Ok(left);
+    }
+    queue.pop_front();
+    let right = parse_one(queue, &token)?;
+    left = AST::Binary(token.unwrap(), Box::new(left), Box::new(right));
   }
 }
 
@@ -427,6 +427,7 @@ fn rek_print(item: &AST, prefix: String) {
 fn pratt_parse_debug(input: &str) {
   println!("{:?}", input);
   let tokens;
+  // TODO: Don't do any parsing as long as tokens end on LineCont.
   match Lexer::new(input).process() {
     Ok(val) => tokens = val,
     Err(err) => { println!("Tokenizing error: {:?}", err); return; }

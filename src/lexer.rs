@@ -1,6 +1,6 @@
 // - implement Iter(able) on Lexer
 // - forgo Strings, use &str everywhere
-// keywords go in parser, or maybe even evaluator
+// keywords go in parser
 
 // Need to import used modules.  If you use things like "std::str::Chars"
 // then you need to import std (use std).
