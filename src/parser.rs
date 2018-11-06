@@ -185,12 +185,17 @@ fn precedence(token: &Option<Token>) -> i32 {
         Token::LParen |
         Token::LBracket |
         Token::Prefix => { -1 },
+        Token::Less |
+        Token::LessEq |
+        Token::Greater |
+        Token::GreaterEq |
+        Token::Equal => { 0 },
         Token::Plus |
-          Token::Minus => { 0 },
+          Token::Minus => { 1 },
         Token::Multiply |
           Token::Divide |
-          Token::Modulo => { 1 },
-        Token::Negation => { 2 }
+          Token::Modulo => { 2 },
+        Token::Negation => { 3 }
         _ => { panic!("Invalid token for precedence {:?}", token) }
       }
     }
@@ -264,7 +269,12 @@ println!("start {:?} {:?}", queue, last_token);
     Some(Token::Minus) |
     Some(Token::Multiply) |
     Some(Token::Divide) |
-    Some(Token::Modulo) => {
+    Some(Token::Modulo) |
+    Some(Token::Less) |
+    Some(Token::LessEq) |
+    Some(Token::Greater) |
+    Some(Token::GreaterEq) |
+    Some(Token::Equal) => {
       let mut expr_list = ExprList::new();
       // TODO: Is this parsing until LineEnd dangerous?
       while queue.len() > 0 && queue.front() != Some(&Token::Line) {
@@ -281,6 +291,7 @@ println!("start {:?} {:?}", queue, last_token);
     return Ok(left);
   }
   loop {
+    // TODO: Get rid of the cloned() here.
     let token = queue.front().cloned();
     match token {
       // Left only tokens.
@@ -309,13 +320,17 @@ println!("start {:?} {:?}", queue, last_token);
       Some(Token::Minus) |
       Some(Token::Multiply) |
       Some(Token::Divide) |
-      Some(Token::Modulo) => {
+      Some(Token::Modulo) |
+      Some(Token::Less) |
+      Some(Token::LessEq) |
+      Some(Token::Greater) |
+      Some(Token::GreaterEq) |
+      Some(Token::Equal) => {
         // Give the left operand back to the previous operator if the precedence is higher
         // or equal.
         if precedence(last_token) >= precedence(&token) {
           return Ok(left);
         }
-        // let token = queue.pop_front().unwrap();
         queue.pop_front();
         let right = foo(queue, &token)?;
         left = AST::Binary(token.unwrap(), Box::new(left), Box::new(right));
