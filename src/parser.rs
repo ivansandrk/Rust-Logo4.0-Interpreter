@@ -114,7 +114,6 @@ impl Parser {
 mod tests {
   use super::*;
 
-  // TODO: Fix these tests.
   // fn test_tokenizer(input: &str, tokens: &[&str]) {
   //   let tokens: VecDeque<String> = tokens.iter().map(|&s| s.into()).collect();
 
@@ -231,24 +230,23 @@ fn parse_left(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result
     },
     Some(Token::LParen) => {
       let mut expr_list = ExprList::new();
-      // TODO: This and LBracket shouldn't go past Token::Line.
-      while queue.len() > 0 && queue.front() != Some(&Token::RParen) {
+      while queue.len() > 0 && queue.front() != Some(&Token::RParen) &&
+                               queue.front() != Some(&Token::Line) {
         expr_list.push(parse_one(queue, &token)?);
       }
       left = AST::ExprList(expr_list);
-      // RParen should be next, which is consumed by this LParen.
-      if queue.pop_front() != Some(Token::RParen) {
-        return Err(format!("unmatched left paren operand {:?} last_token {:?}", left, last_token));
+      if queue.front() == Some(&Token::RParen) {
+        queue.pop_front();
       }
     },
     Some(Token::LBracket) => {
       let mut list = VecDeque::new();
-      while queue.len() > 0 && queue.front() != Some(&Token::RBracket) {
+      while queue.len() > 0 && queue.front() != Some(&Token::RBracket) &&
+                               queue.front() != Some(&Token::Line) {
         list.push_back(parse_one(queue, &token)?);
       }
-      // RBracket is next, and it's consumed by this LBracket.
-      if queue.pop_front() != Some(Token::RBracket) {
-        return Err(format!("unmatched left bracket list {:?} last_token {:?}", list, last_token));
+      if queue.front() == Some(&Token::RBracket) {
+        queue.pop_front();
       }
       left = AST::List(list);
     },
@@ -306,7 +304,9 @@ println!("start {:?} {:?}", queue, last_token);
       Some(Token::Var(_)) |
       Some(Token::Word(_)) |
       Some(Token::LParen) |
-      Some(Token::LBracket) => {
+      Some(Token::RParen) |
+      Some(Token::LBracket) |
+      Some(Token::RBracket) => {
         return Ok(left);
       }
       Some(Token::Whitespace) => {
@@ -317,15 +317,6 @@ println!("start {:?} {:?}", queue, last_token);
           // Eat whitespace and continue onto next iteration of loop.
           eat_whitespace = true;
         }
-      },
-      Some(e @ Token::RParen) |
-      Some(e @ Token::RBracket) => {
-        // RParen/RBracket propagates back until the last left one which consumes it.
-        // TODO: Logo parses "repeat 4 [fd 50 rt 90" just fine.
-        if last_token.is_none() {
-          return Err(format!("unmatched right bracket {:?} queue {:?} last_token {:?}", e, queue, last_token));
-        }
-        return Ok(left);
       },
       Some(Token::Plus) |
       Some(Token::Minus) |
