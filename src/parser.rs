@@ -202,11 +202,10 @@ fn precedence(token: &Option<Token>) -> i32 {
   }
 }
 
-// Logo has separate function and variable definitions.  It doesn't like builtin names
-// for function names.
-fn parse_one(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result<AST, String> {
-println!("start {:?} {:?}", queue, last_token);
-  let mut left;
+// The bool return is no_right, ie. if it's true then parse_all doesn't do parse_right and it just
+// immediately returns the left it got.
+fn parse_left(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result<(AST, bool), String> {
+  let left;
   if queue.front() == Some(&Token::Whitespace) {
     queue.pop_front();
   }
@@ -220,7 +219,7 @@ println!("start {:?} {:?}", queue, last_token);
     },
     Some(Token::Function(name)) => {
       // TODO: Special Function "TO FOO :A :B\n...\nEND" -> have a special function for parsing it.
-      return Ok(AST::CallFunction(name));
+      return Ok((AST::CallFunction(name), true));
     },
     Some(Token::Var(var)) => {
       left = AST::Var(var);
@@ -252,12 +251,8 @@ println!("start {:?} {:?}", queue, last_token);
     },
     Some(Token::Minus) if queue.front() != Some(&Token::Whitespace) => {
       match queue.front() {
-        Some(&Token::Whitespace) => {
-          // TODO: Remove at some point.
-          panic!("Should not be here!");
-        },
         Some(&Token::Num(_)) | Some(&Token::LParen) => {
-          let operand = parse_one(queue, &Some(Token::Negation))?;
+          let (operand, _) = parse_left(queue, &Some(Token::Negation))?;
           left = AST::Unary(Token::Negation, Box::new(operand));
         },
         _ => {
@@ -276,7 +271,6 @@ println!("start {:?} {:?}", queue, last_token);
     Some(Token::GreaterEq) |
     Some(Token::Equal) => {
       let mut expr_list = ExprList::new();
-      // TODO: Is this parsing until LineEnd dangerous?
       while queue.len() > 0 && queue.front() != Some(&Token::Line) {
         expr_list.push(parse_one(queue, &Some(Token::Prefix))?);
       }
@@ -286,10 +280,22 @@ println!("start {:?} {:?}", queue, last_token);
       return Err(format!("missing operand or not an operand {:?} last_token {:?} queue {:?}", token, last_token, queue));
     }
   }
-  // TODO: This could probably go away if I had parse_left and parse_right functions?
-  if last_token == &Some(Token::Negation) {
+  return Ok((left, false));
+}
+
+fn parse_right(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result<AST, String> {
+  return Err("Not implemented".to_string());
+}
+
+// Logo has separate function and variable definitions.  It doesn't like builtin names
+// for function names.
+fn parse_one(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result<AST, String> {
+println!("start {:?} {:?}", queue, last_token);
+  let (mut left, no_right) = parse_left(queue, last_token)?;
+  if no_right {
     return Ok(left);
   }
+
   loop {
     // TODO: Get rid of the cloned() here.
     let token = queue.front().cloned();
