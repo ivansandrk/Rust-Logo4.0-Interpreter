@@ -154,12 +154,27 @@ WHILE [:K < COUNT :R1] [
 */
 // Focus just on ()+*, add -/%, and then add prefix -
 
+// Line represented as a list of expressions, or sub-list inside of a line.
+// Ie. "MAKE "R1 WORD (LIJEVI :R1 :K - 1) (DESNI :R1 (COUNT :R1) - :K)" is an ExprList,
+// but so is "(LIJEVI :R1 :K - 1)".
+type ExprList = Vec<AST>;
+type ExprLines = Vec<ExprList>;
+
 // NumExpr, 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum AST {
-  Unary(Token, Box<AST>),
+  Unary(Token, Box<AST>),  // TODO: enum Number here and below.
   Binary(Token, Box<AST>, Box<AST>),
-  Leaf(i32),
+  Prefix(Token, ExprList),  // Prefix style arithmetic operations, ie. + 3 5 = 8.
+  // Int(i32),  // TODO: Have both int and float num types.
+  Float(f32),
+  DefFunction(String, ExprList, ExprList),  // name, input args (all Var), body
+  CallFunction(String),  // name
+  Var(String),  // :ASD
+  Word(String),  // "BIRD
+  List(VecDeque<AST>), // [1 2 MAKE "A "BSD]
+  ExprList(ExprList),
+  // ExprList line & ExprList lines ? Because line is only evaluated once, ie. ? 1 * 2 3 -> 2 (3 is ignored).
 }
 
 fn precedence(token: &Option<Token>) -> i32 {
@@ -167,7 +182,9 @@ fn precedence(token: &Option<Token>) -> i32 {
     None => { -1 },
     Some(token) => {
       match token {
-        Token::LParen => { -1 },
+        Token::LParen |
+        Token::LBracket |
+        Token::Prefix => { -1 },
         Token::Plus |
           Token::Minus => { 0 },
         Token::Multiply |
@@ -183,6 +200,7 @@ fn precedence(token: &Option<Token>) -> i32 {
 // Logo has separate function and variable definitions.  It doesn't like builtin names
 // for function names.
 fn foo(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result<AST, String> {
+println!("start {:?} {:?}", queue, last_token);
   let mut left;
   if queue.front() == Some(&Token::Whitespace) {
     queue.pop_front();
@@ -190,16 +208,48 @@ fn foo(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result<AST, S
   let token = queue.pop_front();
   match token {
     Some(Token::Num(i)) => {
-      left = AST::Leaf(i);
+      left = AST::Float(i as f32);
     },
-    Some(Token::Minus) => {
+    Some(Token::Float(f)) => {
+      left = AST::Float(f);
+    },
+    Some(Token::Function(name)) => {
+      // TODO: Special Function "TO FOO :A :B\n...\nEND" -> have a special function for parsing it.
+      return Ok(AST::CallFunction(name));
+    },
+    Some(Token::Var(var)) => {
+      left = AST::Var(var);
+    },
+    Some(Token::Word(word)) => {
+      left = AST::Word(word);
+    },
+    Some(Token::LParen) => {
+      let mut expr_list = ExprList::new();
+      while queue.len() > 0 && queue.front() != Some(&Token::RParen) {
+        expr_list.push(foo(queue, &token)?);
+      }
+      left = AST::ExprList(expr_list);
+      // RParen should be next, which is consumed by this LParen.
+      if queue.pop_front() != Some(Token::RParen) {
+        return Err(format!("unmatched left paren operand {:?} last_token {:?}", left, last_token));
+      }
+    },
+    Some(Token::LBracket) => {
+      let mut list = VecDeque::new();
+      while queue.front().is_some() && queue.front() != Some(&Token::RBracket) {
+        list.push_back(foo(queue, &token)?);
+      }
+      // RBracket is next, and it's consumed by this LBracket.
+      if queue.pop_front() != Some(Token::RBracket) {
+        return Err(format!("unmatched left bracket list {:?} last_token {:?}", list, last_token));
+      }
+      left = AST::List(list);
+    },
+    Some(Token::Minus) if queue.front() != Some(&Token::Whitespace) => {
       match queue.front() {
         Some(&Token::Whitespace) => {
-          // Prefix-style subtraction: - 5 2.
-          queue.pop_front();
-          let left_operand = foo(queue, &None)?;
-          let right_operand = foo(queue, &None)?;
-          left = AST::Binary(token.unwrap(), Box::new(left_operand), Box::new(right_operand));
+          // TODO: Remove at some point.
+          panic!("Should not be here!");
         },
         Some(&Token::Num(_)) | Some(&Token::LParen) => {
           let operand = foo(queue, &Some(Token::Negation))?;
@@ -211,34 +261,40 @@ fn foo(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result<AST, S
       }
     },
     Some(Token::Plus) |
+    Some(Token::Minus) |
     Some(Token::Multiply) |
     Some(Token::Divide) |
     Some(Token::Modulo) => {
-      let left_operand = foo(queue, &None)?;
-      let right_operand = foo(queue, &None)?;
-      left = AST::Binary(token.unwrap(), Box::new(left_operand), Box::new(right_operand));
-    },
-    Some(Token::LParen) => {
-      left = foo(queue, &token)?;
-      // RParen should be next, which is consumed by this LParen.
-      if queue.pop_front() != Some(Token::RParen) {
-        return Err(format!("unmatched left paren operand {:?} last_token {:?}", left, last_token));
+      let mut expr_list = ExprList::new();
+      // TODO: Is this parsing until LineEnd dangerous?
+      while queue.len() > 0 && queue.front() != Some(&Token::Line) {
+        expr_list.push(foo(queue, &Some(Token::Prefix))?);
       }
+      left = AST::Prefix(token.unwrap(), expr_list);
     },
     _ => {
       return Err(format!("missing operand or not an operand {:?} last_token {:?} queue {:?}", token, last_token, queue));
     }
   }
+  // TODO: This could probably go away if I had parse_left and parse_right functions?
   if last_token == &Some(Token::Negation) {
     return Ok(left);
   }
   loop {
     let token = queue.front().cloned();
     match token {
-      None => {
-        // Hit end, propagate left to parents right.
+      // Left only tokens.
+      None |  // Hit end, propagate left to parents right.
+      Some(Token::Line) |
+      Some(Token::Num(_)) |
+      Some(Token::Float(_)) |
+      Some(Token::Function(_)) |
+      Some(Token::Var(_)) |
+      Some(Token::Word(_)) |
+      Some(Token::LParen) |
+      Some(Token::LBracket) => {
         return Ok(left);
-      },
+      }
       Some(Token::Whitespace) => {
         if queue.len() >= 3 && queue[0] == Token::Whitespace &&
            queue[1] == Token::Minus && queue[2] != Token::Whitespace {
@@ -271,9 +327,13 @@ fn foo(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result<AST, S
         }
         return Ok(left);
       },
-      Some(e @ Token::Num(_)) | Some(e @ Token::LParen) => {
+      Some(Token::RBracket) => {
+        // RBracket goes back to LParen.
+        if last_token.is_none() {
+          return Err(format!("unmatched right bracket queue {:?} last_token {:?}", queue, last_token));
+        }
         return Ok(left);
-      }
+      },
       _ => {
         return Err(format!("Unknown token {:?}", token));
       },
@@ -281,21 +341,65 @@ fn foo(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result<AST, S
   }
 }
 
+fn parse_line(queue: &mut VecDeque<Token>) -> Result<AST, String> {
+  let mut expr_list = ExprList::new();
+  while queue.front().is_some() &&
+        queue.front() != Some(&Token::Line) {
+println!("{:?}", expr_list);
+    expr_list.push(foo(queue, &None)?);
+  }
+  if queue.front() == Some(&Token::Line) {
+    queue.pop_front();
+  }
+  return Ok(AST::ExprList(expr_list));
+}
+
 fn rek_print(item: &AST, prefix: String) {
   let len = prefix.len();
+  if prefix.len() >= 2 {
+    print!("{}+- ", &prefix[..len-2]);
+  }
   match item {
-    AST::Leaf(num) => {
-      println!("{}+-{:?}", &prefix[..len-2], num);
+    AST::Float(num) => {
+      println!("{:?}", num);
+    },
+    AST::Var(var) => {
+      println!(":{}", var);
+    },
+    AST::Word(word) => {
+      println!("\"{}", word);
+    },
+    AST::CallFunction(name) => {
+      println!("{}", name);
     },
     AST::Unary(operator, operand) => {
-      println!("{}+-{:?}", &prefix[..len-2], operator);
+      println!("{:?}", operator);
       rek_print(operand, prefix.clone() + "  ");
     },
     AST::Binary(operator, left_operand, right_operand) => {
-      println!("{}+-{:?}", &prefix[..len-2], operator);
+      println!("{:?}", operator);
       rek_print(left_operand, prefix.clone() + "| ");
       rek_print(right_operand, prefix.clone() + "  ");
     },
+    AST::Prefix(token, expr_list) => {
+      println!("Prefix {:?}", token);
+      rek_print(&AST::ExprList(expr_list.clone().to_vec()), prefix.clone() + "  ");
+    },
+    AST::List(list) => {
+      println!("{:?}", "LIST");
+      for (i, element) in list.iter().enumerate() {
+        rek_print(element, prefix.clone() + if i < list.len()-1 { "| " } else { "  " });
+      }
+    },
+    AST::ExprList(expr_list) => {
+      println!("EXPRESSION LIST");
+      for (i, element) in expr_list.iter().enumerate() {
+        rek_print(element, prefix.clone() + if i < expr_list.len()-1 { "| " } else { "  " });
+      }
+    },
+    _ => {
+      println!("Not implemented in rek_print {:?}", item);
+    }
   }
 }
 
@@ -308,10 +412,10 @@ fn pratt_parse_debug(input: &str) {
   }
   let mut queue: VecDeque<Token> = tokens.into_iter().collect();
   println!("{:?}", queue);
-  match foo(&mut queue, &None) {
+  match parse_line(&mut queue) {
     Ok(val) => {
       println!("{:?}", val);
-      rek_print(&val, "  ".to_string());
+      rek_print(&val, "".to_string());
     },
     Err(err) => {
       println!("Parsing error: {:?}", err);

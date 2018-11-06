@@ -9,7 +9,7 @@
 use std::iter::Peekable;
 use std::str::Chars;
 use std::collections::HashSet;
-use std::collections::HashMap;
+// use std::collections::HashMap;
 use std::iter::FromIterator;
 use std::mem::replace;
 
@@ -49,12 +49,12 @@ pub enum Token {
   Escape, // \ without a following newline
   Whitespace, // A block (1+ chars) of non-newline whitespace.
 
-  // Used for assignment (MAKE "A 5) or as a word.
-  Word(String),
   // Can be builtin or user defined.
   Function(String),
   // TO FOO :A :B, or FD :A
   Var(String),
+  // Used for assignment (MAKE "A 5) or as a word.
+  Word(String),
   // Numbers (I think all numbers are float in PC Logo 4.0 actually).
   Num(i32),
   Float(f32),
@@ -66,8 +66,9 @@ pub enum Token {
   Divide,
   Modulo,
 
-  // Unary.
+  // Unary and prefix.  TODO: This maybe shouldn't be in here as lexer doesn't use it, only parser.
   Negation,
+  Prefix,
 
   // Brackets.
   LParen,
