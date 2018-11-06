@@ -261,16 +261,10 @@ fn parse_left(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result
         }
       }
     },
-    Some(Token::Plus) |
-    Some(Token::Minus) |
-    Some(Token::Multiply) |
-    Some(Token::Divide) |
-    Some(Token::Modulo) |
-    Some(Token::Less) |
-    Some(Token::LessEq) |
-    Some(Token::Greater) |
-    Some(Token::GreaterEq) |
-    Some(Token::Equal) => {
+    // Prefix-style arithmetic or comparison operators.
+    Some(Token::Plus) | Some(Token::Minus) | Some(Token::Multiply) | Some(Token::Divide) |
+    Some(Token::Modulo) | Some(Token::Less) | Some(Token::LessEq) | Some(Token::Greater) |
+    Some(Token::GreaterEq) | Some(Token::Equal) => {
       let mut expr_list = ExprList::new();
       while queue.len() > 0 && queue.front() != Some(&Token::Line) {
         expr_list.push(parse_one(queue, &Some(Token::Prefix))?);
@@ -292,52 +286,33 @@ println!("start {:?} {:?}", queue, last_token);
   }
 
   loop {
-    let mut eat_whitespace = false;
-    // Deals with left-only tokens, right brackets, and lookahead for unary minus / negation.
+    // Lookahead for unary minus / negation.
+    if queue.len() >= 3 && queue[0] == Token::Whitespace &&
+        queue[1] == Token::Minus && queue[2] == Token::Whitespace {
+      return Ok(left);
+    }
+    if queue.front() == Some(&Token::Whitespace) {
+      queue.pop_front();
+    }
+    // Deals with left-only tokens, and right brackets.
     match queue.front() {
-      // Left only tokens.
-      None |  // Hit end, propagate left to parents right.
-      Some(Token::Line) |
-      Some(Token::Num(_)) |
-      Some(Token::Float(_)) |
-      Some(Token::Function(_)) |
-      Some(Token::Var(_)) |
-      Some(Token::Word(_)) |
-      Some(Token::LParen) |
-      Some(Token::RParen) |
-      Some(Token::LBracket) |
-      Some(Token::RBracket) => {
+      // Left only tokens or end - propagate left to parents right.
+      None | Some(Token::Line) | Some(Token::Num(_)) | Some(Token::Float(_)) |
+      Some(Token::Function(_)) | Some(Token::Var(_)) | Some(Token::Word(_)) |
+      Some(Token::LParen) | Some(Token::RParen) |
+      Some(Token::LBracket) | Some(Token::RBracket) => {
         return Ok(left);
       }
-      Some(Token::Whitespace) => {
-        if queue.len() >= 3 && queue[1] == Token::Minus && queue[2] != Token::Whitespace {
-          // Next one is unary minus, return here.
-          return Ok(left);
-        } else {
-          // Eat whitespace and continue onto next iteration of loop.
-          eat_whitespace = true;
-        }
-      },
-      Some(Token::Plus) |
-      Some(Token::Minus) |
-      Some(Token::Multiply) |
-      Some(Token::Divide) |
-      Some(Token::Modulo) |
-      Some(Token::Less) |
-      Some(Token::LessEq) |
-      Some(Token::Greater) |
-      Some(Token::GreaterEq) |
-      Some(Token::Equal) => {
-        // Needs parsing, handled just below this match.
+      // Infix-style arithmetic or comparison operators.
+      Some(Token::Plus) | Some(Token::Minus) | Some(Token::Multiply) | Some(Token::Divide) |
+      Some(Token::Modulo) | Some(Token::Less) | Some(Token::LessEq) | Some(Token::Greater) |
+      Some(Token::GreaterEq) | Some(Token::Equal) => {
+        // Needs parsing, handled just below this match (because otherwise we would have double
+        // reference to queue).  TODO: Is that true?  Could that code from below be put here?
       },
       _ => {
         return Err(format!("Unknown token {:?}", queue.front()));
       },
-    }
-
-    if eat_whitespace {
-      queue.pop_front();
-      continue;
     }
 
     // TODO: Get rid of cloned (dependent on precedence function).
