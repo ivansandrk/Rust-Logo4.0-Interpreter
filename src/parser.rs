@@ -204,7 +204,7 @@ fn precedence(token: &Option<Token>) -> i32 {
 
 // Logo has separate function and variable definitions.  It doesn't like builtin names
 // for function names.
-fn foo(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result<AST, String> {
+fn parse_one(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result<AST, String> {
 println!("start {:?} {:?}", queue, last_token);
   let mut left;
   if queue.front() == Some(&Token::Whitespace) {
@@ -231,7 +231,7 @@ println!("start {:?} {:?}", queue, last_token);
     Some(Token::LParen) => {
       let mut expr_list = ExprList::new();
       while queue.len() > 0 && queue.front() != Some(&Token::RParen) {
-        expr_list.push(foo(queue, &token)?);
+        expr_list.push(parse_one(queue, &token)?);
       }
       left = AST::ExprList(expr_list);
       // RParen should be next, which is consumed by this LParen.
@@ -242,7 +242,7 @@ println!("start {:?} {:?}", queue, last_token);
     Some(Token::LBracket) => {
       let mut list = VecDeque::new();
       while queue.front().is_some() && queue.front() != Some(&Token::RBracket) {
-        list.push_back(foo(queue, &token)?);
+        list.push_back(parse_one(queue, &token)?);
       }
       // RBracket is next, and it's consumed by this LBracket.
       if queue.pop_front() != Some(Token::RBracket) {
@@ -257,7 +257,7 @@ println!("start {:?} {:?}", queue, last_token);
           panic!("Should not be here!");
         },
         Some(&Token::Num(_)) | Some(&Token::LParen) => {
-          let operand = foo(queue, &Some(Token::Negation))?;
+          let operand = parse_one(queue, &Some(Token::Negation))?;
           left = AST::Unary(Token::Negation, Box::new(operand));
         },
         _ => {
@@ -278,7 +278,7 @@ println!("start {:?} {:?}", queue, last_token);
       let mut expr_list = ExprList::new();
       // TODO: Is this parsing until LineEnd dangerous?
       while queue.len() > 0 && queue.front() != Some(&Token::Line) {
-        expr_list.push(foo(queue, &Some(Token::Prefix))?);
+        expr_list.push(parse_one(queue, &Some(Token::Prefix))?);
       }
       left = AST::Prefix(token.unwrap(), expr_list);
     },
@@ -332,7 +332,7 @@ println!("start {:?} {:?}", queue, last_token);
           return Ok(left);
         }
         queue.pop_front();
-        let right = foo(queue, &token)?;
+        let right = parse_one(queue, &token)?;
         left = AST::Binary(token.unwrap(), Box::new(left), Box::new(right));
       },
       Some(Token::RParen) => {
@@ -361,7 +361,7 @@ fn parse_line(queue: &mut VecDeque<Token>) -> Result<AST, String> {
   while queue.front().is_some() &&
         queue.front() != Some(&Token::Line) {
 println!("{:?}", expr_list);
-    expr_list.push(foo(queue, &None)?);
+    expr_list.push(parse_one(queue, &None)?);
   }
   if queue.front() == Some(&Token::Line) {
     queue.pop_front();
