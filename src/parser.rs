@@ -110,33 +110,6 @@ impl Parser {
   // }
 }
 
-#[cfg(test)]
-mod tests {
-  use super::*;
-
-  // fn test_tokenizer(input: &str, tokens: &[&str]) {
-  //   let tokens: VecDeque<String> = tokens.iter().map(|&s| s.into()).collect();
-
-  //   let mut parser = Parser::new();
-  //   parser.feed(input);
-  //   assert_eq!(tokens, parser.tokens);
-  // }
-
-  // #[test]
-  // fn tokenizer1() {
-  //   let input = "rePEat 4[fd 5 rt   90] [lt 5  fd 10 ] ";
-  //   let tokens = ["repeat", "4", "[", "fd", "5" , "rt", "90", "]", "[", "lt", "5", "fd", "10", "]"];
-  //   test_tokenizer(&input, &tokens);
-  // }
-
-  // #[test]
-  // fn tokenizer2() {
-  //   let input = " REPEAT 4[fd 5 Rt   90 [ bK  10 FD 50] ]  fd 30";
-  //   let tokens = ["repeat", "4", "[", "fd", "5", "rt", "90", "[", "bk", "10", "fd", "50", "]", "]", "fd", "30"];
-  //   test_tokenizer(input, &tokens);
-  // }
-}
-
 
 // MAKE "K 0 WHILE [:K < COUNT :R1] [MAKE "K :K + 1 IF (ITEM :K :R1) = (ITEM :K :R2) THEN [MAKE "BP :BP + 1 MAKE "R1 WORD (LIJEVI :R1 :K - 1) (DESNI :R1 (COUNT :R1) - :K) MAKE "R2 WORD (LIJEVI :R2 :K - 1) (DESNI :R2 (COUNT :R2) - :K) MAKE "K :K - 1]]
 /*
@@ -159,8 +132,8 @@ WHILE [:K < COUNT :R1] [
 type ExprList = Vec<AST>;
 type ExprLines = Vec<ExprList>;
 
-// NumExpr, 
-#[derive(Debug, Clone)]
+// NumExpr, TODO: Remove Clone?
+#[derive(Debug, Clone, PartialEq)]
 enum AST {
   Unary(Token, Box<AST>),  // TODO: enum Number here and below.
   Binary(Token, Box<AST>, Box<AST>),
@@ -228,16 +201,18 @@ fn parse_left(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result
     Some(Token::Word(word)) => {
       left = AST::Word(word);
     },
+    // TODO: (+ 1 2 3) needs to be added as well.
     Some(Token::LParen) => {
       let mut expr_list = ExprList::new();
       while queue.len() > 0 && queue.front() != Some(&Token::RParen) &&
                                queue.front() != Some(&Token::Line) {
         expr_list.push(parse_one(queue, &token)?);
       }
-      left = AST::ExprList(expr_list);
-      if queue.front() == Some(&Token::RParen) {
-        queue.pop_front();
+      // RParen should be next, which is consumed by this LParen.
+      if queue.pop_front() != Some(Token::RParen) {
+        return Err(format!("unmatched left paren operand {:?} last_token {:?}", expr_list, last_token));
       }
+      left = AST::ExprList(expr_list);
     },
     Some(Token::LBracket) => {
       let mut list = VecDeque::new();
@@ -245,8 +220,9 @@ fn parse_left(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result
                                queue.front() != Some(&Token::Line) {
         list.push_back(parse_one(queue, &token)?);
       }
-      if queue.front() == Some(&Token::RBracket) {
-        queue.pop_front();
+      // RBracket is next, and it's consumed by this LBracket.
+      if queue.pop_front() != Some(Token::RBracket) {
+        return Err(format!("unmatched left bracket list {:?} last_token {:?}", list, last_token));
       }
       left = AST::List(list);
     },
@@ -299,10 +275,17 @@ println!("start {:?} {:?}", queue, last_token);
       // Left only tokens or end - propagate left to parents right.
       None | Some(Token::Line) | Some(Token::Num(_)) | Some(Token::Float(_)) |
       Some(Token::Function(_)) | Some(Token::Var(_)) | Some(Token::Word(_)) |
-      Some(Token::LParen) | Some(Token::RParen) |
-      Some(Token::LBracket) | Some(Token::RBracket) => {
+      Some(Token::LParen) | Some(Token::LBracket) => {
         return Ok(left);
-      }
+      },
+      Some(e @ Token::RParen) |
+      Some(e @ Token::RBracket) => {
+        // RParen/RBracket propagates back until the last left one which consumes it.
+        if last_token.is_none() {
+          return Err(format!("unmatched right bracket {:?} queue {:?} last_token {:?}", e, queue, last_token));
+        }
+        return Ok(left);
+      },
       // Infix-style arithmetic or comparison operators.
       Some(Token::Plus) | Some(Token::Minus) | Some(Token::Multiply) | Some(Token::Divide) |
       Some(Token::Modulo) | Some(Token::Less) | Some(Token::LessEq) | Some(Token::Greater) |
@@ -408,6 +391,40 @@ fn pratt_parse_debug(input: &str) {
     Err(err) => {
       println!("Parsing error: {:?}", err);
     },
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  // fn test_tokenizer(input: &str, tokens: &[&str]) {
+  //   let tokens: VecDeque<String> = tokens.iter().map(|&s| s.into()).collect();
+
+  //   let mut parser = Parser::new();
+  //   parser.feed(input);
+  //   assert_eq!(tokens, parser.tokens);
+  // }
+
+  // #[test]
+  // fn tokenizer1() {
+  //   let input = "rePEat 4[fd 5 rt   90] [lt 5  fd 10 ] ";
+  //   let tokens = ["repeat", "4", "[", "fd", "5" , "rt", "90", "]", "[", "lt", "5", "fd", "10", "]"];
+  //   test_tokenizer(&input, &tokens);
+  // }
+
+  #[test]
+  fn prefix_list_list() {
+    let input = "+ 1 2 3";
+    // let expected: AST = [AST::Float(0.0)].iter().map(|&s| s.into()).collect();
+    let expected = AST::ExprList([
+      AST::Prefix(Token::Plus, [AST::Float(1.0), AST::Float(2.0), AST::Float(3.0)].to_vec())
+    ].to_vec());
+    let tokens = Lexer::new(input).process().unwrap();
+    let mut queue: VecDeque<Token> = tokens.into_iter().collect();
+    let ast = parse_line(&mut queue).unwrap();
+    rek_print(&ast, "".to_string());
+    assert_eq!(expected, ast);
   }
 }
 
