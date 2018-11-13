@@ -175,9 +175,7 @@ fn precedence(token: &Option<Token>) -> i32 {
   }
 }
 
-// The bool return is no_right, ie. if it's true then parse_all doesn't do parse_right and it just
-// immediately returns the left it got.
-fn parse_left(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result<(AST, bool), String> {
+fn parse_left(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result<AST, String> {
   let left;
   if queue.front() == Some(&Token::Whitespace) {
     queue.pop_front();
@@ -199,7 +197,6 @@ fn parse_left(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result
         expr_list.push(parse_one(queue, &Some(Token::Function("".to_string())))?);
       }
       left = AST::CallFunction(name, expr_list);
-      // return Ok((AST::CallFunction(name), true));
     },
     Some(Token::Var(var)) => {
       left = AST::Var(var);
@@ -210,8 +207,9 @@ fn parse_left(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result
     // TODO: (+ 1 2 3) needs to be added as well.
     Some(Token::LParen) => {
       let mut expr_list = ExprList::new();
-      while queue.len() > 0 && queue.front() != Some(&Token::RParen) &&
-                               queue.front() != Some(&Token::Line) {
+      while queue.len() > 0 && queue.front() != Some(&Token::Line) &&
+                               queue.front() != Some(&Token::RParen) &&
+                               queue.front() != Some(&Token::RBracket) {
         expr_list.push(parse_one(queue, &token)?);
       }
       // RParen should be next, which is consumed by this LParen.
@@ -222,8 +220,9 @@ fn parse_left(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result
     },
     Some(Token::LBracket) => {
       let mut list = VecDeque::new();
-      while queue.len() > 0 && queue.front() != Some(&Token::RBracket) &&
-                               queue.front() != Some(&Token::Line) {
+      while queue.len() > 0 && queue.front() != Some(&Token::Line) &&
+                               queue.front() != Some(&Token::RParen) &&
+                               queue.front() != Some(&Token::RBracket) {
         list.push_back(parse_one(queue, &token)?);
       }
       // RBracket is next, and it's consumed by this LBracket.
@@ -235,7 +234,7 @@ fn parse_left(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result
     Some(Token::Minus) if queue.front() != Some(&Token::Whitespace) => {
       match queue.front() {
         Some(&Token::Num(_)) | Some(&Token::LParen) => {
-          let (operand, _) = parse_left(queue, &Some(Token::Negation))?;
+          let operand = parse_left(queue, &Some(Token::Negation))?;
           left = AST::Unary(Token::Negation, Box::new(operand));
         },
         _ => {
@@ -248,7 +247,9 @@ fn parse_left(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result
     Some(Token::Modulo) | Some(Token::Less) | Some(Token::LessEq) | Some(Token::Greater) |
     Some(Token::GreaterEq) | Some(Token::Equal) => {
       let mut expr_list = ExprList::new();
-      while queue.len() > 0 && queue.front() != Some(&Token::Line) {
+      while queue.len() > 0 && queue.front() != Some(&Token::Line) &&
+                               queue.front() != Some(&Token::RParen) &&
+                               queue.front() != Some(&Token::RBracket) {
         expr_list.push(parse_one(queue, &Some(Token::Prefix))?);
       }
       left = AST::Prefix(token.unwrap(), expr_list);
@@ -258,15 +259,11 @@ fn parse_left(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result
     }
   }
 
-  return Ok((left, false));
+  return Ok(left);
 }
 
 fn parse_one(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result<AST, String> {
-  let (mut left, no_right) = parse_left(queue, last_token)?;
-  assert!(no_right == false);
-  // if no_right {
-  //   return Ok(left);
-  // }
+  let mut left = parse_left(queue, last_token)?;
 
   loop {
     // Lookahead for unary minus / negation.
@@ -328,7 +325,6 @@ fn parse_line(queue: &mut VecDeque<Token>) -> Result<AST, String> {
   let mut expr_list = ExprList::new();
   while queue.front().is_some() &&
         queue.front() != Some(&Token::Line) {
-println!("{:?}", expr_list);
     expr_list.push(parse_one(queue, &None)?);
   }
   if queue.front() == Some(&Token::Line) {
@@ -410,45 +406,106 @@ fn pratt_parse_debug(input: &str) {
 
 #[cfg(test)]
 mod tests {
+  #![allow(non_snake_case)]
   use super::*;
+  // use AST::*;
 
-  // fn test_tokenizer(input: &str, tokens: &[&str]) {
-  //   let tokens: VecDeque<String> = tokens.iter().map(|&s| s.into()).collect();
-
-  //   let mut parser = Parser::new();
-  //   parser.feed(input);
-  //   assert_eq!(tokens, parser.tokens);
-  // }
-
-  // #[test]
-  // fn tokenizer1() {
-  //   let input = "rePEat 4[fd 5 rt   90] [lt 5  fd 10 ] ";
-  //   let tokens = ["repeat", "4", "[", "fd", "5" , "rt", "90", "]", "[", "lt", "5", "fd", "10", "]"];
-  //   test_tokenizer(&input, &tokens);
-  // }
-
-  #[test]
-  fn prefix_list_list() {
-    let input = "+ 1 2 3";
-    // let expected: AST = [AST::Float(0.0)].iter().map(|&s| s.into()).collect();
-    let expected = AST::ExprList([
-      AST::Prefix(Token::Plus, [AST::Float(1.0), AST::Float(2.0), AST::Float(3.0)].to_vec())
-    ].to_vec());
+  fn test_line_ok(input: &str, expected: &[AST]) {
     let tokens = Lexer::new(input).process().unwrap();
     let mut queue: VecDeque<Token> = tokens.into_iter().collect();
     let ast = parse_line(&mut queue).unwrap();
-    rek_print(&ast, "".to_string());
-    assert_eq!(expected, ast);
+    // rek_print(&ast, "".to_string());
+    assert_eq!(AST::ExprList(expected.to_vec()), ast, "\ninput: {}", input);
+  }
+
+  fn Negation(operand: AST) -> AST {
+    AST::Unary(Token::Negation, Box::new(operand))
+  }
+
+  fn F(float: f32) -> AST {
+    AST::Float(float)
+  }
+
+  fn I(int: i32) -> AST {
+    AST::Float(int as f32)
+  }
+
+  fn Prefix(token: Token, expr_list: &[AST]) -> AST {
+    AST::Prefix(token, expr_list.to_vec())
+  }
+  fn PPlus(expr_list: &[AST]) -> AST {
+    Prefix(Token::Plus, expr_list)
+  }
+
+  fn Binary(token: Token, left: AST, right: AST) -> AST {
+    AST::Binary(token, Box::new(left), Box::new(right))
+  }
+
+  macro_rules! gen_binary {
+    ($name:ident) => {
+      fn $name(left: AST, right: AST) -> AST {
+        Binary(Token::$name, left, right)
+      }
+    }
+  }
+  gen_binary!(Plus);
+  gen_binary!(Minus);
+  gen_binary!(Multiply);
+  gen_binary!(Divide);
+
+  // #[test]
+  // fn prefix_list_list() {
+  //   test_line_ok("+ 1 2 ", &[
+  //     prefix(Token::Plus, &[i(1), i(2), i(3)])
+  //   ]);
+  // }
+
+  #[test]
+  fn batch_tests() {
+    for (input, expected) in &[
+      ("+ 1 2", &[PPlus(&[I(1), I(2)])][..]),
+      ("1 + 2 - 3", &[Minus(Plus(I(1), I(2)),
+                            I(3))][..]),
+      ("1+2-3", &[Minus(Plus(I(1), I(2)),
+                            I(3))][..]),
+      ("1 + 2 -3", &[Plus(I(1), I(2)),
+                     Negation(I(3))][..]),
+      ("1 + (2 * (3 + 4 * -5) + -6 * -(-7 + -8)) * 9", &[
+        Plus(I(1),
+         Multiply(
+          AST::ExprList(vec!(Plus(
+           Multiply(
+            I(2),
+            AST::ExprList(vec!(Plus(
+             I(3),
+             Multiply(
+              I(4),
+              Negation(I(5))
+             )
+            )))
+           ),
+           Multiply(
+            Negation(I(6)),
+            Negation(
+             AST::ExprList(vec!(Plus(
+              Negation(I(7)),
+              Negation(I(8))
+             )))
+            )
+           )
+          ))),
+          I(9)
+         )
+        )
+      ][..]),
+    ] {
+      test_line_ok(input, expected);
+    }
   }
 }
 
 fn main() {
-  // let input = "(1 + 5) % 3 * 3 - 4 / 1";
-  // 1 2 3 4 5 * + * 6 7 8 + * + 9 * +
-  // 1 + (2 * (3 + 4 * 5) + 6 * (7 + 8)) * 9
   // 1 + (2 * (3 + 4 * -5) + -6 * -(-7 + -8)) * 9
-  // let input = "1 + (2 * (3 + 4 * 5) + 6 * (7 + 8)) * 9";
-  // let input = "1 + (2 * (3 + 4 * 5) + 6 + 7) * 8";
   loop {
     let mut input = String::new();
     std::io::stdin().read_line(&mut input).unwrap();
