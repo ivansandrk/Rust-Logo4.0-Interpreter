@@ -145,7 +145,8 @@ enum AST {
   Var(String),  // :ASD
   Word(String),  // "BIRD
   List(VecDeque<AST>), // [1 2 MAKE "A "BSD]
-  ExprList(ExprList),  // Used for a line of Exprs, or Exprs inside of parens
+  ExprList(ExprList),  // Exprs inside of parens
+  ExprLine(ExprList),  // Line of exprs
   // ExprList line & ExprList lines ? Because line is only evaluated once, ie. ? 1 * 2 3 -> 2 (3 is ignored).
 }
 
@@ -330,7 +331,7 @@ fn parse_line(queue: &mut VecDeque<Token>) -> Result<AST, String> {
   if queue.front() == Some(&Token::Line) {
     queue.pop_front();
   }
-  return Ok(AST::ExprList(expr_list));
+  return Ok(AST::ExprLine(expr_list));
 }
 
 fn rek_print(item: &AST, prefix: String) {
@@ -415,7 +416,7 @@ mod tests {
     let mut queue: VecDeque<Token> = tokens.into_iter().collect();
     let ast = parse_line(&mut queue).unwrap();
     // rek_print(&ast, "".to_string());
-    assert_eq!(AST::ExprList(expected.to_vec()), ast, "\ninput: {}", input);
+    assert_eq!(AST::ExprLine(expected.to_vec()), ast, "\ninput: {}", input);
   }
 
   fn Negation(operand: AST) -> AST {
