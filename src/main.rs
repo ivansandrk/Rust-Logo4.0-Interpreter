@@ -6,7 +6,7 @@
 extern crate ggez;
 
 mod parser;
-mod turtle;
+mod evaluator;
 
 use std::io;
 use std::sync::mpsc;
@@ -88,6 +88,7 @@ impl MainState {
 
   fn update(&mut self) {
     if let Ok(input) = self.receiver.try_recv() {
+      // TODO: evaluator.feed(input, graphics)
       let mut parser = parser::Parser::new();
       parser.feed(&input);
       let commands = parser.parse_all();

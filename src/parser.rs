@@ -10,8 +10,6 @@
 #![allow(unused_variables)]
 #![allow(dead_code)]
 
-mod lexer;
-
 use lexer::{Token, Lexer};
 use std::collections::VecDeque;
 
@@ -134,14 +132,14 @@ type ExprLines = Vec<ExprList>;
 
 // NumExpr, TODO: Remove Clone?
 #[derive(Debug, Clone, PartialEq)]
-enum AST {
+pub enum AST {
   Unary(Token, Box<AST>),  // TODO: enum Number here and below.
   Binary(Token, Box<AST>, Box<AST>),
   Prefix(Token, ExprList),  // Prefix style arithmetic operations, ie. + 3 5 = 8.
   // Int(i32),  // TODO: Have both int and float num types.
   Float(f32),
-  DefFunction(String, ExprList, ExprLines),  // name, input args (all Var), body
-  CallFunction(String, ExprList),  // name, arguments and rest
+  // DefFunction(String, ExprList, ExprLines),  // name, input args (all Var), body
+  Function(String, ExprList),  // name, arguments and rest
   Var(String),  // :ASD
   Word(String),  // "BIRD
   List(VecDeque<AST>), // [1 2 MAKE "A "BSD]
@@ -197,7 +195,7 @@ fn parse_left(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result
                                queue.front() != Some(&Token::RBracket) {
         expr_list.push(parse_one(queue, &Some(Token::Function("".to_string())))?);
       }
-      left = AST::CallFunction(name, expr_list);
+      left = AST::Function(name, expr_list);
     },
     Some(Token::Var(var)) => {
       left = AST::Var(var);
@@ -322,7 +320,7 @@ fn parse_one(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result<
   return Ok(left);
 }
 
-fn parse_line(queue: &mut VecDeque<Token>) -> Result<AST, String> {
+pub fn parse_line(queue: &mut VecDeque<Token>) -> Result<AST, String> {
   let mut expr_list = ExprList::new();
   while queue.front().is_some() &&
         queue.front() != Some(&Token::Line) {
@@ -349,7 +347,7 @@ fn rek_print(item: &AST, prefix: String) {
     AST::Word(word) => {
       println!("\"{}", word);
     },
-    AST::CallFunction(name, expr_list) => {
+    AST::Function(name, expr_list) => {
       println!("{}", name);
       rek_print(&AST::ExprList(expr_list.clone().to_vec()), prefix.clone() + "  ");
     },
@@ -506,6 +504,7 @@ mod tests {
 }
 
 fn main() {
+  use std;
   // 1 + (2 * (3 + 4 * -5) + -6 * -(-7 + -8)) * 9
   loop {
     let mut input = String::new();

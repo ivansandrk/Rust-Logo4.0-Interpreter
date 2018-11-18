@@ -371,18 +371,3 @@ mod tests {
     ]);
   }
 }
-
-// fn test_lexer(input: &str) {
-//   println!("{:?}", Lexer::new(input).process());
-// }
-
-// fn main() {
-//   #[allow(unused_variables)]
-//   test_lexer(" rePEat 4[fd 5 rt   90] [lt 5  fd 10 ] ");
-//   test_lexer(" REPEAT 4[fd 5 Rt   90 [ bK  10 FD 50] ] fd 10");
-//   test_lexer("fd ");
-//   test_lexer(" :ASD1 2 3.4 .5a");
-//   test_lexer("fd 50 :5 :");
-//   test_lexer("shown? []");
-//   test_lexer("TO DOE?T :ASD? :BB");
-// }
