@@ -98,75 +98,61 @@ impl Evaluator {
 //   // ExprList line & ExprList lines ? Because line is only evaluated once, ie. ? 1 * 2 3 -> 2 (3 is ignored).
 
   // TODO: Eval number, or eval float/int, what should be the return type?
-  fn eval_number(&mut self, ast_node: &AST) -> Option<f32> {
-    let evaluated_node = self.eval(ast_node);
+  fn eval_number(&mut self, ast_node: &AST) -> Result<f32, String> {
+    let evaluated_node = self.eval(ast_node)?;
     match evaluated_node {
       Some(AST::Float(float)) => {
-        return Some(float);
+        Ok(float)
       },
       _ => {
-        return None;
+        Err(format!("Expr doesn't evaluate to a number {:?}", ast_node))
       }
     }
   }
 
-  fn eval(&mut self, ast_node: &AST) -> Option<AST> {
+  fn eval(&mut self, ast_node: &AST) -> Result<Option<AST>, String> {
+    let mut ret = None;
     match ast_node {
       AST::ExprLine(expr_list) | AST::ExprList(expr_list) => {
         for expr in expr_list {
-          let result = self.eval(expr);
+          let result = self.eval(expr)?;
           if result.is_some() {
-            return result;
+            ret = result;
           }
         }
-        return None;
       },
       AST::Float(float) => {
-        return Some(AST::Float(*float));
+        ret = Some(AST::Float(*float));
       },
       AST::Unary(operator, box_operand) => {
-        let operand = match self.eval_number(box_operand) {
-          Some(float) => { float },
-          None => {
-            println!("The operator {:?} needs a number as its input.", operator);
-            return None;
-          }
-        };
+        let operand = self.eval_number(box_operand)?;
         let result = match operator {
           Token::Negation => { -operand },
           _ => {
-            println!("Unknown unary operator {:?}", operator);
-            return None;
+            panic!("Unknown unary operator {:?}", operator);
           }
         };
-        return Some(AST::Float(result));
+        ret = Some(AST::Float(result));
       },
       AST::Binary(operator, left_box, right_box) => {
-        let left = self.eval_number(left_box);
-        let right = self.eval_number(right_box);
-        if left.is_none() || right.is_none() {
-          println!("The operator {:?} needs a number as its input.", operator);
-          return None;
-        }
-        let left = left.unwrap();
-        let right = right.unwrap();
+        let left = self.eval_number(left_box)?;
+        let right = self.eval_number(right_box)?;
         let result = match operator {
           Token::Plus => { left + right },
           Token::Minus => { left - right },
           Token::Multiply => { left * right },
           Token::Divide => { left / right },
           _ => {
-            println!("Unknown binary operator {:?}", operator);
-            return None;
+            panic!("Unknown binary operator {:?}", operator);
           }
         };
-        return Some(AST::Float(result));
+        ret = Some(AST::Float(result));
       },
       _x => {
         println!("Unimplemented eval AST {:?}", _x);
       }
     }
-    return None;
+    return Ok(ret);
   }
 
   fn feed(&mut self, input: &str) {
