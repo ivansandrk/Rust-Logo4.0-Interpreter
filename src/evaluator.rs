@@ -127,15 +127,9 @@ impl Evaluator {
         // TODO: Try to get rid of this clone somehow.
         ret = Some(AST::List(list.clone()));
       },
-      AST::Unary(operator, box_operand) => {
+      AST::Unary(Token::Negation, box_operand) => {
         let operand = self.eval_number(box_operand)?;
-        let result = match operator {
-          Token::Negation => { -operand },
-          _ => {
-            panic!("Unknown unary operator {:?}", operator);
-          }
-        };
-        ret = Some(AST::Float(result));
+        ret = Some(AST::Float(-operand));
       },
       AST::Binary(operator, left_box, right_box) => {
         let left = self.eval_number(left_box)?;
