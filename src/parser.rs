@@ -129,6 +129,7 @@ WHILE [:K < COUNT :R1] [
 // but so is "(LIJEVI :R1 :K - 1)".
 type ExprList = Vec<AST>;
 type ExprLines = Vec<ExprList>;
+type ListType = VecDeque<AST>;
 
 // NumExpr, TODO: Remove Clone?
 #[derive(Debug, Clone, PartialEq)]
@@ -142,7 +143,7 @@ pub enum AST {
   Function(String, ExprList),  // name, arguments and rest
   Var(String),  // :ASD
   Word(String),  // "BIRD
-  List(VecDeque<AST>), // [1 2 MAKE "A "BSD]
+  List(ListType), // [1 2 MAKE "A "BSD]
   ExprList(ExprList),  // Exprs inside of parens
   ExprLine(ExprList),  // Line of exprs
   // ExprList line & ExprList lines ? Because line is only evaluated once, ie. ? 1 * 2 3 -> 2 (3 is ignored).
@@ -218,7 +219,7 @@ fn parse_left(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result
       left = AST::ExprList(expr_list);
     },
     Some(Token::LBracket) => {
-      let mut list = VecDeque::new();
+      let mut list = ListType::new();
       while queue.len() > 0 && queue.front() != Some(&Token::Line) &&
                                queue.front() != Some(&Token::RParen) &&
                                queue.front() != Some(&Token::RBracket) {

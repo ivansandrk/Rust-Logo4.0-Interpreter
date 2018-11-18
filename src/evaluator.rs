@@ -82,6 +82,7 @@ impl Evaluator {
 
 // type ExprList = Vec<AST>;
 // type ExprLines = Vec<ExprList>;
+// type ListType = VecDeque<AST>
 // #[derive(Debug, Clone, PartialEq)]
 // pub enum AST {
 //   Unary(Token, Box<AST>),  // TODO: enum Number here and below.
@@ -92,10 +93,7 @@ impl Evaluator {
 //   CallFunction(String, ExprList),  // name, arguments and rest
 //   Var(String),  // :ASD
 //   Word(String),  // "BIRD
-//   List(VecDeque<AST>), // [1 2 MAKE "A "BSD]
-//   ExprList(ExprList),  // Exprs inside of parens
-//   ExprLine(ExprList),  // Line of exprs
-//   // ExprList line & ExprList lines ? Because line is only evaluated once, ie. ? 1 * 2 3 -> 2 (3 is ignored).
+//   List(ListType), // [1 2 MAKE "A "BSD]
 
   // TODO: Eval number, or eval float/int, what should be the return type?
   fn eval_number(&mut self, ast_node: &AST) -> Result<f32, String> {
@@ -113,6 +111,7 @@ impl Evaluator {
   fn eval(&mut self, ast_node: &AST) -> Result<Option<AST>, String> {
     let mut ret = None;
     match ast_node {
+      // TODO: ExprList(Operator/Function...) where eats all
       AST::ExprLine(expr_list) | AST::ExprList(expr_list) => {
         for expr in expr_list {
           let result = self.eval(expr)?;
@@ -123,6 +122,10 @@ impl Evaluator {
       },
       AST::Float(float) => {
         ret = Some(AST::Float(*float));
+      },
+      AST::List(list) => {
+        // TODO: Try to get rid of this clone somehow.
+        ret = Some(AST::List(list.clone()));
       },
       AST::Unary(operator, box_operand) => {
         let operand = self.eval_number(box_operand)?;
