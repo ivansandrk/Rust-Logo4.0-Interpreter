@@ -257,6 +257,7 @@ impl<'a> Lexer<'a> {
     let mut tokens = replace(&mut self.tokens, Vec::new());
     // Make sure we end with a LineEnd/LineCont.
     if tokens.last() != Some(&Token::LineEnd) && tokens.last() != Some(&Token::LineCont) {
+      println!("Tokenizer: line doesn't end with newline {:?}", tokens);
       if tokens.last() == Some(&Token::Escape) {
         tokens.pop();
         tokens.push(Token::LineCont);
