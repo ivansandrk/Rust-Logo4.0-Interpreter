@@ -173,11 +173,15 @@ impl<'a> Lexer<'a> {
   }
 
   fn process(&mut self) -> Result<Vec<Token>, String> {
+    let mut line_begin = true;
+
     loop {
-      // Skip whitespace, but collect the token as it might be needed in the parser.
-      if self.skip_whitespace() {
+      // Skip whitespace, and collect the token if it's not the beginning of the line as it might be
+      // needed in the parser.
+      if self.skip_whitespace() && !line_begin {
         self.tokens.push(Token::Whitespace);
       }
+      line_begin = false;
 
       // No more input, we're done.
       let c: char;
@@ -188,12 +192,17 @@ impl<'a> Lexer<'a> {
 
       let token: Token;
       match c {
-        '\n' => { self.next_char(); token = Token::LineEnd; },
+        '\n' => {
+          self.next_char();
+          token = Token::LineEnd;
+          line_begin = true;
+        },
         '\\' => {
           self.next_char();
           if self.peek_char() == Some('\n') {
             self.next_char();
             token = Token::LineCont;
+            line_begin = true;
           } else {
             token = Token::Escape;
           }
@@ -360,7 +369,6 @@ mod tests {
       Token::Function("REPEAT".to_string()),
       Token::Whitespace,
       Token::LineEnd,
-      Token::Whitespace,
       Token::Num(50),
       Token::LBracket,
       Token::LineEnd,
@@ -403,6 +411,19 @@ mod tests {
     test_ok("4\\", &[
       Token::Num(4),
       Token::LineCont,
+    ]);
+  }
+
+  #[test]
+  fn skip_whitespace_line_begin() {
+    test_ok("  4 5 \n 6\n", &[
+      Token::Num(4),
+      Token::Whitespace,
+      Token::Num(5),
+      Token::Whitespace,
+      Token::LineEnd,
+      Token::Num(6),
+      Token::LineEnd,
     ]);
   }
 }
