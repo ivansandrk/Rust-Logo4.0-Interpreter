@@ -9,14 +9,11 @@
 //   (unless they open a paren, ie (+ 1 2 3 4) will give 10, while + 1 2 3 4 will give just 3)
 // - TODO: Drop use of VecDeque?
 
-// #![allow(unused_variables)]
-// #![allow(dead_code)]
+use lexer;
 
-// use lexer;
-mod lexer;
-
-use lexer::Token;
 use std::collections::VecDeque;
+use std::mem;
+use lexer::Token;
 
 #[derive(Debug)]
 pub enum ValueExpr {
@@ -273,7 +270,7 @@ impl Parser {
     }
     if !self.saved_tokens.is_empty() {
       self.saved_tokens.append(&mut tokens);
-      tokens = std::mem::replace(&mut self.saved_tokens, Vec::new());
+      tokens = mem::replace(&mut self.saved_tokens, Vec::new());
     }
 
     let mut tokens: VecDeque<Token> = tokens.into_iter().collect();
