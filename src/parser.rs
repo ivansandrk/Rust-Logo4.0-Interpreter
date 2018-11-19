@@ -111,22 +111,6 @@ impl Parser {
   // }
 }
 
-
-// MAKE "K 0 WHILE [:K < COUNT :R1] [MAKE "K :K + 1 IF (ITEM :K :R1) = (ITEM :K :R2) THEN [MAKE "BP :BP + 1 MAKE "R1 WORD (LIJEVI :R1 :K - 1) (DESNI :R1 (COUNT :R1) - :K) MAKE "R2 WORD (LIJEVI :R2 :K - 1) (DESNI :R2 (COUNT :R2) - :K) MAKE "K :K - 1]]
-/*
-MAKE "K 0
-WHILE [:K < COUNT :R1] [
-  MAKE "K :K + 1
-  IF (ITEM :K :R1) = (ITEM :K :R2) THEN [
-    MAKE "BP :BP + 1
-    MAKE "R1 WORD (LIJEVI :R1 :K - 1) (DESNI :R1 (COUNT :R1) - :K)
-    MAKE "R2 WORD (LIJEVI :R2 :K - 1) (DESNI :R2 (COUNT :R2) - :K)
-    MAKE "K :K - 1
-  ]
-]
-*/
-// Focus just on ()+*, add -/%, and then add prefix -
-
 // Line represented as a list of expressions, or sub-list inside of a line.
 // Ie. "MAKE "R1 WORD (LIJEVI :R1 :K - 1) (DESNI :R1 (COUNT :R1) - :K)" is an ExprList,
 // but so is "(LIJEVI :R1 :K - 1)".
