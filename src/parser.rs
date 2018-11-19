@@ -11,7 +11,9 @@
 #![allow(unused_variables)]
 #![allow(dead_code)]
 
-use lexer::{Token, Lexer};
+use lexer;
+
+use lexer::Token;
 use std::collections::VecDeque;
 
 #[derive(Debug)]
@@ -61,7 +63,7 @@ impl Parser {
   pub fn new(input: &str) -> Parser {
     Parser {
       // iter: Lexer::new(input).process(),//.peekable(),
-      tokens: Lexer::new(input).process(),
+      tokens: lexer::process(input),
     }
   }
 
@@ -192,7 +194,7 @@ fn parse_left(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result
     Some(Token::Function(name)) => {
       // TODO: Special Function "TO FOO :A :B\n...\nEND" -> have a special function for parsing it.
       let mut expr_list = ExprList::new(); // 3 * (2 * ADD 1 2) + 5
-      while queue.len() > 0 && queue.front() != Some(&Token::Line) &&
+      while queue.len() > 0 && queue.front() != Some(&Token::LineEnd) &&
                                queue.front() != Some(&Token::RParen) &&
                                queue.front() != Some(&Token::RBracket) {
         expr_list.push(parse_one(queue, &Some(Token::Function("".to_string())))?);
@@ -208,7 +210,7 @@ fn parse_left(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result
     // TODO: (+ 1 2 3) needs to be added as well.
     Some(Token::LParen) => {
       let mut expr_list = ExprList::new();
-      while queue.len() > 0 && queue.front() != Some(&Token::Line) &&
+      while queue.len() > 0 && queue.front() != Some(&Token::LineEnd) &&
                                queue.front() != Some(&Token::RParen) &&
                                queue.front() != Some(&Token::RBracket) {
         expr_list.push(parse_one(queue, &token)?);
@@ -221,7 +223,7 @@ fn parse_left(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result
     },
     Some(Token::LBracket) => {
       let mut list = ListType::new();
-      while queue.len() > 0 && queue.front() != Some(&Token::Line) &&
+      while queue.len() > 0 && queue.front() != Some(&Token::LineEnd) &&
                                queue.front() != Some(&Token::RParen) &&
                                queue.front() != Some(&Token::RBracket) {
         list.push_back(parse_one(queue, &token)?);
@@ -248,7 +250,7 @@ fn parse_left(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result
     Some(Token::Modulo) | Some(Token::Less) | Some(Token::LessEq) | Some(Token::Greater) |
     Some(Token::GreaterEq) | Some(Token::Equal) => {
       let mut expr_list = ExprList::new();
-      while queue.len() > 0 && queue.front() != Some(&Token::Line) &&
+      while queue.len() > 0 && queue.front() != Some(&Token::LineEnd) &&
                                queue.front() != Some(&Token::RParen) &&
                                queue.front() != Some(&Token::RBracket) {
         expr_list.push(parse_one(queue, &Some(Token::Prefix))?);
@@ -279,7 +281,7 @@ fn parse_one(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result<
     // Deals with left-only tokens, and right brackets.
     match queue.front() {
       // Left only tokens or end - propagate left to parents right.
-      None | Some(Token::Line) | Some(Token::Num(_)) | Some(Token::Float(_)) |
+      None | Some(Token::LineEnd) | Some(Token::Num(_)) | Some(Token::Float(_)) |
       Some(Token::Function(_)) | Some(Token::Var(_)) | Some(Token::Word(_)) |
       Some(Token::LParen) | Some(Token::LBracket) => {
         // return Ok(left);
@@ -325,10 +327,10 @@ fn parse_one(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result<
 pub fn parse_line(queue: &mut VecDeque<Token>) -> Result<AST, String> {
   let mut expr_list = ExprList::new();
   while queue.front().is_some() &&
-        queue.front() != Some(&Token::Line) {
+        queue.front() != Some(&Token::LineEnd) {
     expr_list.push(parse_one(queue, &None)?);
   }
-  if queue.front() == Some(&Token::Line) {
+  if queue.front() == Some(&Token::LineEnd) {
     queue.pop_front();
   }
   return Ok(AST::ExprLine(expr_list));
@@ -388,7 +390,7 @@ fn pratt_parse_debug(input: &str) {
   println!("{:?}", input);
   let tokens;
   // TODO: Don't do any parsing as long as tokens end on LineCont.
-  match Lexer::new(input).process() {
+  match lexer::process(input) {
     Ok(val) => tokens = val,
     Err(err) => { println!("Tokenizing error: {:?}", err); return; }
   }
@@ -412,7 +414,7 @@ mod tests {
   // use AST::*;
 
   fn test_line_ok(input: &str, expected: &[AST]) {
-    let tokens = Lexer::new(input).process().unwrap();
+    let tokens = lexer::process(input).unwrap();
     let mut queue: VecDeque<Token> = tokens.into_iter().collect();
     let ast = parse_line(&mut queue).unwrap();
     // rek_print(&ast, "".to_string());

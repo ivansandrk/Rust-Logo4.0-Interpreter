@@ -169,7 +169,8 @@ impl Evaluator {
     println!("{:?}", input);
     let tokens;
     // TODO: Don't do any parsing as long as tokens end on LineCont.
-    match lexer::Lexer::new(input).process() {
+    // TODO: Don't call into lexer directly, parser uses the lexer.
+    match lexer::process(input) {
       Ok(val) => tokens = val,
       Err(err) => { println!("Tokenizing error: {:?}", err); return; }
     }

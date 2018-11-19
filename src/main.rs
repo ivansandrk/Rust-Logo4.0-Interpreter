@@ -5,6 +5,7 @@
 
 extern crate ggez;
 
+mod lexer;
 mod parser;
 mod evaluator;
 
