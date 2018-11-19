@@ -73,6 +73,7 @@ impl Turtle {
 struct Evaluator {
   turtle: Turtle,
   vars: HashMap<String, AST>,
+  // some kind of hashmap for functions which supports both builtin and user defined functions
 }
 
 impl Evaluator {

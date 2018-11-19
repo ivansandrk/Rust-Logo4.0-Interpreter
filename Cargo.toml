@@ -4,8 +4,10 @@ version = "0.1.0"
 authors = ["isandrk"]
 
 [[bin]]
-name = "evaluator"
-path = "src/evaluator.rs"
+#name = "evaluator"
+#path = "src/evaluator.rs"
+name = "parser"
+path = "src/parser.rs"
 
 [dependencies]
 #image = "0.20.0"

@@ -7,11 +7,13 @@
 // - Logo has separate function and variable definitions.  It doesn't like builtin names for function names.
 // - TODO: Prefix operators should take only the first two following expressions, not everything
 //   (unless they open a paren, ie (+ 1 2 3 4) will give 10, while + 1 2 3 4 will give just 3)
+// - TODO: Drop use of VecDeque?
 
-#![allow(unused_variables)]
-#![allow(dead_code)]
+// #![allow(unused_variables)]
+// #![allow(dead_code)]
 
-use lexer;
+// use lexer;
+mod lexer;
 
 use lexer::Token;
 use std::collections::VecDeque;
@@ -51,66 +53,6 @@ pub enum Expr {
   // Move { x: i32, y: i32 },
 }
 
-// #[derive(Default)]
-pub struct Parser {
-  // iter: std::iter::Peekable<Token>,
-  tokens: Result<Vec<Token>, String>,
-  // current_token: String,
-  // stack: Vec<>, // vec of what?
-}
-
-impl Parser {
-  pub fn new(input: &str) -> Parser {
-    Parser {
-      // iter: Lexer::new(input).process(),//.peekable(),
-      tokens: lexer::process(input),
-    }
-  }
-
-  fn process(&mut self) -> Expr {
-    loop {
-      // match self.iter.next() {
-      //   Token::Keyword("REPEAT".as_string()) => {
-      //     // Expr::Repeat(ValueExpr, Expr List)
-      //     // Repeat( parse next as value expr, parse next as expr list )
-      //   },
-      //   _ => {},
-      // }
-    }
-    // let ret = match self.next_token().as_str() {
-    //   "fd" => Expr::Fd(self.next_token_as_f32()),
-    //   "bk" => Expr::Bk(self.next_token_as_f32()),
-    //   "rt" => Expr::Rt(self.next_token_as_f32()),
-    //   "lt" => Expr::Lt(self.next_token_as_f32()),
-    //   "cs" => Expr::Cs,
-    //   "repeat" => {
-    //     let count = self.next_token_as_u32();
-    //     let repeated_command = self.parse();
-    //     Expr::Repeat(count, Box::new(repeated_command))
-    //   },
-    //   "[" => {
-    //     let mut commands: Vec<Expr> = Vec::new();
-    //     while self.peek_token() != "]" {
-    //       commands.push(self.parse());
-    //     }
-    //     // Consume the "]".
-    //     assert!(self.next_token() == "]");
-    //     Expr::Block(commands)
-    //   },
-    //   _ => Expr::Unknown,
-    // };
-    // return ret;
-  }
-
-  // pub fn parse_all(&mut self) -> Vec<Expr> {
-  //   let mut commands: Vec<Expr> = Vec::new();
-  //   while self.has_tokens() {
-  //     commands.push(self.parse());
-  //   }
-  //   commands
-  // }
-}
-
 // Line represented as a list of expressions, or sub-list inside of a line.
 // Ie. "MAKE "R1 WORD (LIJEVI :R1 :K - 1) (DESNI :R1 (COUNT :R1) - :K)" is an ExprList,
 // but so is "(LIJEVI :R1 :K - 1)".
@@ -126,7 +68,7 @@ pub enum AST {
   Prefix(Token, ExprList),  // Prefix style arithmetic operations, ie. + 3 5 = 8.
   // Int(i32),  // TODO: Have both int and float num types.
   Float(f32),
-  // DefFunction(String, ExprList, ExprLines),  // name, input args (all Var), body
+  DefFunction(String, ExprList, ExprLines),  // name, input args (all Var), body
   Function(String, ExprList),  // name, arguments and rest
   Var(String),  // :ASD
   Word(String),  // "BIRD
@@ -134,6 +76,9 @@ pub enum AST {
   ExprList(ExprList),  // Exprs inside of parens
   ExprLine(ExprList),  // Line of exprs
   // ExprList line & ExprList lines ? Because line is only evaluated once, ie. ? 1 * 2 3 -> 2 (3 is ignored).
+  // Parser returns None in case it doesn't have a fully parsed expression.  Ie. a function
+  // definition, or a LineCont might cause the expression to span multiple input lines.
+  None,
 }
 
 fn precedence(token: &Option<Token>) -> i32 {
@@ -256,7 +201,6 @@ fn parse_one(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result<
     // Lookahead for unary minus / negation.
     if queue.len() >= 3 && queue[0] == Token::Whitespace &&
         queue[1] == Token::Minus && queue[2] != Token::Whitespace {
-      // return Ok(left);
       break;
     }
     if queue.front() == Some(&Token::Whitespace) {
@@ -268,7 +212,6 @@ fn parse_one(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result<
       None | Some(Token::LineEnd) | Some(Token::Num(_)) | Some(Token::Float(_)) |
       Some(Token::Function(_)) | Some(Token::Var(_)) | Some(Token::Word(_)) |
       Some(Token::LParen) | Some(Token::LBracket) => {
-        // return Ok(left);
         break;
       },
       Some(e @ Token::RParen) |
@@ -277,7 +220,6 @@ fn parse_one(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result<
         if last_token.is_none() {
           return Err(format!("unmatched right bracket {:?} queue {:?} last_token {:?}", e, queue, last_token));
         }
-        // return Ok(left);
         break;
       },
       // Infix-style arithmetic or comparison operators.
@@ -297,7 +239,6 @@ fn parse_one(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result<
     // Give the left operand back to the previous operator if the precedence is higher
     // or equal.
     if precedence(last_token) >= precedence(&token) {
-      // return Ok(left);
       break;
     }
     queue.pop_front();
@@ -308,16 +249,47 @@ fn parse_one(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result<
   return Ok(left);
 }
 
-pub fn parse_line(queue: &mut VecDeque<Token>) -> Result<AST, String> {
-  let mut expr_list = ExprList::new();
-  while queue.front().is_some() &&
-        queue.front() != Some(&Token::LineEnd) {
-    expr_list.push(parse_one(queue, &None)?);
+#[derive(Default)]
+pub struct Parser {
+  saved_tokens: Vec<Token>,
+}
+
+impl Parser {
+  pub fn new() -> Parser {
+    Parser {
+      ..Default::default()
+    }
   }
-  if queue.front() == Some(&Token::LineEnd) {
-    queue.pop_front();
+
+  // Should take in only one line (for now).
+  pub fn parse(&mut self, input: &str) -> Result<AST, String> {
+    let mut tokens = lexer::process(input)?;
+
+    // In case we have a LineCont save, or load saved tokens.
+    if tokens.last() == Some(&Token::LineCont) {
+      tokens.pop();
+      self.saved_tokens.append(&mut tokens);
+      return Ok(AST::None);
+    }
+    if !self.saved_tokens.is_empty() {
+      self.saved_tokens.append(&mut tokens);
+      tokens = std::mem::replace(&mut self.saved_tokens, Vec::new());
+    }
+
+    let mut tokens: VecDeque<Token> = tokens.into_iter().collect();
+    let mut expr_list = ExprList::new();
+    while tokens.front().is_some() &&
+          tokens.front() != Some(&Token::LineEnd) {
+      expr_list.push(parse_one(&mut tokens, &None)?);
+    }
+    if tokens.front() == Some(&Token::LineEnd) {
+      tokens.pop_front();
+    }
+    if !tokens.is_empty() {
+      return Err(format!("parse should get only one line of input!"));
+    }
+    return Ok(AST::ExprLine(expr_list));
   }
-  return Ok(AST::ExprLine(expr_list));
 }
 
 fn rek_print(item: &AST, prefix: String) {
@@ -364,30 +336,18 @@ fn rek_print(item: &AST, prefix: String) {
         rek_print(element, prefix.clone() + if i < expr_list.len()-1 { "| " } else { "  " });
       }
     },
+    AST::ExprLine(expr_list) => {
+      println!("Expression line");
+      for (i, element) in expr_list.iter().enumerate() {
+        rek_print(element, prefix.clone() + if i < expr_list.len()-1 { "| " } else { "  " });
+      }
+    },
+    AST::None => {
+      println!("None");
+    },
     _ => {
       println!("Not implemented in rek_print {:?}", item);
     }
-  }
-}
-
-fn pratt_parse_debug(input: &str) {
-  println!("{:?}", input);
-  let tokens;
-  // TODO: Don't do any parsing as long as tokens end on LineCont.
-  match lexer::process(input) {
-    Ok(val) => tokens = val,
-    Err(err) => { println!("Tokenizing error: {:?}", err); return; }
-  }
-  let mut queue: VecDeque<Token> = tokens.into_iter().collect();
-  println!("{:?}", queue);
-  match parse_line(&mut queue) {
-    Ok(val) => {
-      println!("{:?}", val);
-      rek_print(&val, "".to_string());
-    },
-    Err(err) => {
-      println!("Parsing error: {:?}", err);
-    },
   }
 }
 
@@ -398,9 +358,7 @@ mod tests {
   // use AST::*;
 
   fn test_line_ok(input: &str, expected: &[AST]) {
-    let tokens = lexer::process(input).unwrap();
-    let mut queue: VecDeque<Token> = tokens.into_iter().collect();
-    let ast = parse_line(&mut queue).unwrap();
+    let ast = Parser::new().parse(input).unwrap();
     // rek_print(&ast, "".to_string());
     assert_eq!(AST::ExprLine(expected.to_vec()), ast, "\ninput: {}", input);
   }
@@ -489,25 +447,31 @@ mod tests {
       test_line_ok(input, expected);
     }
   }
+
+  #[test]
+  fn line_cont() {
+    let mut parser = Parser::new();
+    assert_eq!(AST::None, parser.parse("1 2\\\n").unwrap());
+    assert_eq!(AST::ExprLine(vec![AST::Float(1.0), AST::Float(2.0), AST::Float(3.0)]),
+               parser.parse("3").unwrap());
+  }
 }
 
 fn main() {
   use std;
   // 1 + (2 * (3 + 4 * -5) + -6 * -(-7 + -8)) * 9
+  let mut parser = Parser::new();
   loop {
     let mut input = String::new();
     std::io::stdin().read_line(&mut input).unwrap();
-    pratt_parse_debug(input.trim());
+    match parser.parse(&input) {
+      Ok(val) => {
+        println!("{:?}", val);
+        rek_print(&val, "".to_string());
+      },
+      Err(err) => {
+        println!("Parsing error: {:?}", err);
+      },
+    }
   }
 }
-
-// fn main() {
-//   let str1 = " rePEat 4[fd 5 rt   90] [lt 5  fd 10 ] ";
-//   let str2 = " REPEAT 4[fd 5 Rt   90 [ bK  10 FD 50] ] fd 10";
-//   let str3 = "fd "; // TODO: Crashes.
-
-//   // let mut input = String::new();
-//   // std::io::stdin().read_line(&mut input).unwrap();
-//   println!("{:?}", lexer::Lexer::new(str2).process());
-//   // println!("{:?}", Parser::new(str2).process());
-// }
