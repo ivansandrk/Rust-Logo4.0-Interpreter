@@ -8,6 +8,7 @@ mod parser;
 // use std;
 // use parser;
 use std::collections::VecDeque;
+use std::collections::HashMap;
 use parser::AST;
 use lexer::Token;
 
@@ -71,12 +72,14 @@ impl Turtle {
 
 struct Evaluator {
   turtle: Turtle,
+  vars: HashMap<String, AST>,
 }
 
 impl Evaluator {
   fn new() -> Self {
     Self {
       turtle: Turtle::new(),
+      vars: HashMap::new(),
     }
   }
 
@@ -85,15 +88,8 @@ impl Evaluator {
 // type ListType = VecDeque<AST>
 // #[derive(Debug, Clone, PartialEq)]
 // pub enum AST {
-//   Unary(Token, Box<AST>),  // TODO: enum Number here and below.
-//   Binary(Token, Box<AST>, Box<AST>),
 //   Prefix(Token, ExprList),  // Prefix style arithmetic operations, ie. + 3 5 = 8.
-//   Float(f32),
-//   DefFunction(String, ExprList, ExprLines),  // name, input args (all Var), body
-//   CallFunction(String, ExprList),  // name, arguments and rest
-//   Var(String),  // :ASD
-//   Word(String),  // "BIRD
-//   List(ListType), // [1 2 MAKE "A "BSD]
+//   Function(String, ExprList),  // name, arguments and rest
 
   // TODO: Eval number, or eval float/int, what should be the return type?
   fn eval_number(&mut self, ast_node: &AST) -> Result<f32, String> {
@@ -120,6 +116,16 @@ impl Evaluator {
           }
         }
       },
+      AST::Var(var_name) => {
+        match self.vars.get(var_name) {
+          Some(ast) => {
+            ret = Some(ast.clone());
+          },
+          None => {
+            return Err(format!(":{} is not a Logo name.", var_name));
+          }
+        }
+      },
       AST::Float(float) => {
         ret = Some(AST::Float(*float));
       },
@@ -127,10 +133,14 @@ impl Evaluator {
         // TODO: Try to get rid of this clone somehow.
         ret = Some(AST::List(list.clone()));
       },
+      AST::Word(string) => {
+        ret = Some(AST::Word(string.clone()));
+      },
       AST::Unary(Token::Negation, box_operand) => {
         let operand = self.eval_number(box_operand)?;
         ret = Some(AST::Float(-operand));
       },
+      // TODO: Need to implement all Binary operators.
       AST::Binary(operator, left_box, right_box) => {
         let left = self.eval_number(left_box)?;
         let right = self.eval_number(right_box)?;
@@ -144,6 +154,9 @@ impl Evaluator {
           }
         };
         ret = Some(AST::Float(result));
+      },
+      AST::Prefix(_operator, _expr_list) => {
+        println!("Unimplemented prefix operators");
       },
       _x => {
         println!("Unimplemented eval AST {:?}", _x);

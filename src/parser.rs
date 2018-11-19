@@ -5,7 +5,8 @@
 // - ListExpr?
 // - List type definitely
 // - Logo has separate function and variable definitions.  It doesn't like builtin names for function names.
-
+// - TODO: Prefix operators should take only the first two following expressions, not everything
+//   (unless they open a paren, ie (+ 1 2 3 4) will give 10, while + 1 2 3 4 will give just 3)
 
 #![allow(unused_variables)]
 #![allow(dead_code)]
