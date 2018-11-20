@@ -206,6 +206,18 @@ impl Evaluator {
     self.stack_local_state.last_mut().unwrap()
   }
 
+  fn eval_next_remainder(&mut self) -> Result<AST, String> {
+    let next_ast = self.local_state().remainder.pop_front();
+    match next_ast {
+      Some(ast) => {
+        return self.eval(&ast);
+      },
+      None => {
+        return Err(format!("Need more input(s)."));
+      }
+    }
+  }
+
   fn eval_user_function(&mut self, name: &str) -> Result<AST, String> {
     let args;
     let lines;
@@ -225,15 +237,7 @@ impl Evaluator {
         AST::Var(_var) => { var = _var; }
         _ => { panic!("Invalid function definition {}", name); }
       }
-      let next_ast = self.local_state().remainder.pop_front();
-      match next_ast {
-        Some(ast) => {
-          new_local_state.vars.insert(var.to_string(), self.eval(&ast)?);
-        },
-        None => {
-          return Err(format!("{} needs more input(s).", name));
-        }
-      }
+      new_local_state.vars.insert(var.to_string(), self.eval_next_remainder()?);
     }
     self.stack_local_state.push(new_local_state);
     let mut ret = AST::None;
@@ -241,7 +245,8 @@ impl Evaluator {
     for line in lines {
       ret = self.eval(&line)?;
       match ret {
-        AST::FunctionReturn(_) => {
+        AST::FunctionReturn(ast) => {
+          ret = *ast;
           break;
         },
         AST::None => {},
@@ -275,6 +280,7 @@ impl Evaluator {
         } else {
           match name.as_str() {
             "POPS" => { ret = self.pops()?; },
+            "OP" | "OUTPUT" => { ret = AST::FunctionReturn(Box::new(self.eval_next_remainder()?)); },
             _ => {
               return Err(format!("Unknown function {:?}", name));
             }
@@ -303,11 +309,15 @@ impl Evaluator {
         self.local_state().remainder.clear();
       },
       AST::Var(var_name) => {
-        match self.vars.get(var_name) {
-          Some(ast) => {
+        let mut has_local = false;
+        if let Some(ast) = self.local_state().vars.get(var_name) {
+          has_local = true;
+          ret = ast.clone();
+        }
+        if !has_local {
+          if let Some(ast) = self.vars.get(var_name) {
             ret = ast.clone();
-          },
-          None => {
+          } else {
             return Err(format!(":{} is not a Logo name.", var_name));
           }
         }
