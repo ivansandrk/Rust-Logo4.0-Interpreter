@@ -89,19 +89,17 @@ impl LocalState {
 struct Evaluator {
   parser: parser::Parser,
   turtle: Turtle,
+
   // Global variables.
   vars: HashMap<String, AST>,
 
-  // Function local variables, or arguments.
-  // local_vars: HashMap<String, AST>,
-  // remainder: VecDeque<AST>,
-  // ^ These two should be part of the function execution context.
+  // Local state, contains local variables and remainder used for function evaluation.
   stack_local_state: Vec<LocalState>,
 
-  // some kind of hashmap for functions which supports both builtin and user defined functions
-  // User defined functions.
+  builtin_functions: HashMap<String, Box<Fn(&mut Evaluator) -> Result<AST, String>>>,
   user_functions: HashMap<String, (ExprList, ExprLines)>,
-  // Name and args of the currently defined function.
+
+  // Name, args, and lines of the currently defined function.
   name: String,
   args: ExprList,
   lines: ExprLines,
@@ -113,22 +111,73 @@ impl Evaluator {
       ..Default::default()
     };
     evaluator.stack_local_state.push(LocalState::new());
+    evaluator.define_builtins();
     evaluator
   }
 
-  fn eval_number(&mut self, ast_node: &AST) -> Result<f32, String> {
-    let evaluated_node = self.eval(ast_node)?;
-    match evaluated_node {
-      AST::Float(float) => {
-        Ok(float)
-      },
-      _ => {
-        Err(format!("Expr doesn't evaluate to a number {:?}", ast_node))
+  fn define_builtins(&mut self) {
+    self.builtin_functions.insert("OP".to_string(), Box::new(|evaluator| {
+      Ok(AST::FunctionReturn(Box::new(evaluator.eval_next_remainder()?)))
+    }));
+    self.builtin_functions.insert("OUTPUT".to_string(), Box::new(|evaluator| {
+      Ok(AST::FunctionReturn(Box::new(evaluator.eval_next_remainder()?)))
+    }));
+    self.builtin_functions.insert("POPS".to_string(), Box::new(|evaluator| {
+      for (name, (args, lines)) in evaluator.user_functions.iter() {
+        print!("TO {}", name);
+        for arg in args {
+          match arg {
+            AST::Var(var) => { print!(" :{}", var); }
+            _ => {}
+          }
+        }
+        println!();
+        for line in lines {
+          println!("{:?}", line);
+        }
+        println!("END");
       }
+      Ok(AST::None)
+    }));
+    self.builtin_functions.insert("REPEAT".to_string(), Box::new(|evaluator| {
+      let next_ast = evaluator.eval_next_remainder()?;
+      let repeat = evaluator.get_number(&next_ast)?;
+      let next_ast = evaluator.eval_next_remainder()?;
+      let list = evaluator.get_list(&next_ast)?;
+      for _ in 0 .. repeat as i32 {
+        evaluator.eval_list(&list)?;
+      }
+      println!("{}", repeat);
+      Ok(AST::None)
+    }));
+  }
+
+  fn get_number(&mut self, ast_node: &AST) -> Result<f32, String> {
+    match self.eval(ast_node)? {
+      AST::Float(float) => { Ok(float) },
+      _ => { Err(format!("Expr doesn't evaluate to a number {:?}", ast_node)) }
     }
   }
 
-  // TODO: Don't allow defining built-in functions.
+  fn get_list(&mut self, ast_node: &AST) -> Result<ListType, String> {
+    match self.eval(ast_node)? {
+      AST::List(list) => { Ok(list) },
+      _ => { Err(format!("Expr doesn't evaluate to a list {:?}", ast_node)) }
+    }
+  }
+
+  fn eval_list(&mut self, list: &ListType) -> Result<(), String> {
+    // TODO: Evaluating a list should probably mess with remainder.
+    // TODO: Remove ? from this function.
+    for item in list {
+      let result = self.eval(&item)?;
+      if result != AST::None {
+        return Err(format!("You don't say what to do with the output of {:?}", result));
+      }
+    }
+    return Ok(());
+  }
+
   fn def_function(&mut self, ast_node: &AST) -> Result<(bool), String> {
     // Already started defining.
     if self.name != "" {
@@ -163,6 +212,9 @@ impl Evaluator {
     }
     match function.first() {
       Some(AST::Function(name, args)) => {
+        if self.builtin_functions.contains_key(name) {
+          return Err(format!("{} is already in use. Try a different name.", name));
+        }
         for arg in args {
           match arg {
             AST::Var(_) => {},
@@ -182,24 +234,6 @@ impl Evaluator {
       }
     }
     return Ok(true);
-  }
-
-  fn pops(&mut self) -> Result<AST, String> {
-    for (name, (args, lines)) in self.user_functions.iter() {
-      print!("TO {}", name);
-      for arg in args {
-        match arg {
-          AST::Var(var) => { print!(" :{}", var); }
-          _ => {}
-        }
-      }
-      println!();
-      for line in lines {
-        println!("{:?}", line);
-      }
-      println!("END");
-    }
-    Ok(AST::None)
   }
 
   fn local_state(&mut self) -> &mut LocalState {
@@ -242,8 +276,17 @@ impl Evaluator {
     self.stack_local_state.push(new_local_state);
     let mut ret = AST::None;
     // Run the lines.
+    let mut err = None;
     for line in lines {
-      ret = self.eval(&line)?;
+      match self.eval(&line) {
+        Ok(result) => {
+          ret = result;
+        },
+        e @ Err(_) => {
+          err = Some(e);
+          break;
+        },
+      }
       match ret {
         AST::FunctionReturn(ast) => {
           ret = *ast;
@@ -251,16 +294,19 @@ impl Evaluator {
         },
         AST::None => {},
         _ => {
-          return Err(format!(
+          err = Some(Err(format!(
               "You don't say what to do with the output of {:?}\n\
                In function {}\n\
-               Statement   {:?}", ret, name, line));
+               Statement   {:?}", ret, name, line)));
         }
       }
     }
     self.stack_local_state.pop();
     assert!(self.stack_local_state.len() > 0);
-    return Ok(ret);
+    match err {
+      None => { Ok(ret) },
+      Some(err) => { err }
+    }
   }
 
   fn eval(&mut self, ast_node: &AST) -> Result<AST, String> {
@@ -271,23 +317,32 @@ impl Evaluator {
     let mut ret = AST::None;
     match ast_node {
       AST::Function(name, expr_list) => {
-        println!("{:?}", expr_list);
         assert!(self.local_state().remainder.is_empty(), format!("{:?}", self.local_state().remainder));
         self.local_state().remainder = VecDeque::from(expr_list.clone());
-        // TODO: Check for user defined & builtin functions here.
-        if self.user_functions.contains_key(name) {
-          ret = self.eval_user_function(name)?;
-        } else {
-          match name.as_str() {
-            "POPS" => { ret = self.pops()?; },
-            "OP" | "OUTPUT" => { ret = AST::FunctionReturn(Box::new(self.eval_next_remainder()?)); },
-            _ => {
-              return Err(format!("Unknown function {:?}", name));
+        if self.builtin_functions.contains_key(name) {
+          // TODO: Try to do this part without taking the closure out.
+          // (*self.builtin_functions.get(name).unwrap())(self);
+          let closure = self.builtin_functions.remove(name).unwrap();
+          match closure(self) {
+            Ok(result) => {
+              self.builtin_functions.insert(name.clone(), closure);
+              ret = result;
+            },
+            e @ Err(_) => {
+              self.builtin_functions.insert(name.clone(), closure);
+              return e;
             }
           }
+          // ret = closure(self)?;
+          // self.builtin_functions.insert(name.clone(), closure);
+        } else if self.user_functions.contains_key(name) {
+          ret = self.eval_user_function(name)?;
+        } else {
+          return Err(format!("Unknown function {:?}", name));
         }
       },
       AST::ExprLine(expr_list) => {
+        self.local_state().remainder.clear();
         for expr in expr_list {
           let result = self.eval(expr)?;
           if result != AST::None {
@@ -295,7 +350,6 @@ impl Evaluator {
             break;
           }
         }
-        self.local_state().remainder.clear();
       },
       AST::ExprList(expr_list) => {
         match expr_list.first() {
@@ -333,13 +387,13 @@ impl Evaluator {
         ret = AST::Word(string.clone());
       },
       AST::Unary(Token::Negation, box_operand) => {
-        let operand = self.eval_number(box_operand)?;
+        let operand = self.get_number(box_operand)?;
         ret = AST::Float(-operand);
       },
       // TODO: Need to implement all Binary operators.
       AST::Binary(operator, left_box, right_box) => {
-        let left = self.eval_number(left_box)?;
-        let right = self.eval_number(right_box)?;
+        let left = self.get_number(left_box)?;
+        let right = self.get_number(right_box)?;
         let result = match operator {
           Token::Plus => { left + right },
           Token::Minus => { left - right },
