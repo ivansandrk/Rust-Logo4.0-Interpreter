@@ -53,9 +53,9 @@ pub enum Expr {
 // Line represented as a list of expressions, or sub-list inside of a line.
 // Ie. "MAKE "R1 WORD (LIJEVI :R1 :K - 1) (DESNI :R1 (COUNT :R1) - :K)" is an ExprList,
 // but so is "(LIJEVI :R1 :K - 1)".
-type ExprList = Vec<AST>;
-type ExprLines = Vec<ExprList>;
-type ListType = VecDeque<AST>;
+pub type ExprList = Vec<AST>;
+pub type ExprLines = Vec<AST>;  // AST here is AST::ExprLine.
+pub type ListType = VecDeque<AST>;
 
 // NumExpr, TODO: Remove Clone?
 #[derive(Debug, Clone, PartialEq)]
@@ -65,8 +65,8 @@ pub enum AST {
   Prefix(Token, ExprList),  // Prefix style arithmetic operations, ie. + 3 5 = 8.
   // Int(i32),  // TODO: Have both int and float num types.
   Float(f32),
-  DefFunction(String, ExprList, ExprLines),  // name, input args (all Var), body
   Function(String, ExprList),  // name, arguments and rest
+  FunctionReturn(Box<AST>),  // return value from function
   Var(String),  // :ASD
   Word(String),  // "BIRD
   List(ListType), // [1 2 MAKE "A "BSD]
@@ -289,7 +289,7 @@ impl Parser {
   }
 }
 
-fn rek_print(item: &AST, prefix: String) {
+pub fn rek_print(item: &AST, prefix: String) {
   let len = prefix.len();
   if prefix.len() >= 2 {
     print!("{}+- ", &prefix[..len-2]);

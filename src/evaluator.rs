@@ -7,9 +7,10 @@ mod parser;
 
 // use std;
 // use parser;
-use std::collections::VecDeque;
 use std::collections::HashMap;
-use parser::AST;
+use std::collections::VecDeque;
+use std::mem;
+use parser::{AST, ListType, ExprList, ExprLines};
 use lexer::Token;
 
 pub trait Graphics {
@@ -70,33 +71,55 @@ impl Turtle {
   }
 }
 
-struct Evaluator {
-  turtle: Turtle,
+#[derive(Default)]
+struct LocalState {
   vars: HashMap<String, AST>,
+  remainder: VecDeque<AST>,
+}
+
+impl LocalState {
+  fn new() -> LocalState {
+    LocalState {
+      ..Default::default()
+    }
+  }
+}
+
+#[derive(Default)]
+struct Evaluator {
+  parser: parser::Parser,
+  turtle: Turtle,
+  // Global variables.
+  vars: HashMap<String, AST>,
+
+  // Function local variables, or arguments.
+  // local_vars: HashMap<String, AST>,
+  // remainder: VecDeque<AST>,
+  // ^ These two should be part of the function execution context.
+  stack_local_state: Vec<LocalState>,
+
   // some kind of hashmap for functions which supports both builtin and user defined functions
+  // User defined functions.
+  user_functions: HashMap<String, (ExprList, ExprLines)>,
+  // Name and args of the currently defined function.
+  name: String,
+  args: ExprList,
+  lines: ExprLines,
 }
 
 impl Evaluator {
   fn new() -> Self {
-    Self {
-      turtle: Turtle::new(),
-      vars: HashMap::new(),
-    }
+    let mut evaluator = Evaluator {
+      ..Default::default()
+    };
+    evaluator.stack_local_state.push(LocalState::new());
+    evaluator
   }
 
-// type ExprList = Vec<AST>;
-// type ExprLines = Vec<ExprList>;
-// type ListType = VecDeque<AST>
-// #[derive(Debug, Clone, PartialEq)]
-// pub enum AST {
-//   Prefix(Token, ExprList),  // Prefix style arithmetic operations, ie. + 3 5 = 8.
-//   Function(String, ExprList),  // name, arguments and rest
-
-  // TODO: Eval number, or eval float/int, what should be the return type?
   fn eval_number(&mut self, ast_node: &AST) -> Result<f32, String> {
     let evaluated_node = self.eval(ast_node)?;
     match evaluated_node {
-      Some(AST::Float(float)) => {
+      AST::Float(float) => {
         Ok(float)
       },
       _ => {
@@ -105,22 +128,184 @@ impl Evaluator {
     }
   }
 
-  fn eval(&mut self, ast_node: &AST) -> Result<Option<AST>, String> {
-    let mut ret = None;
+  // TODO: Don't allow defining built-in functions.
+  fn def_function(&mut self, ast_node: &AST) -> Result<(bool), String> {
+    // Already started defining.
+    if self.name != "" {
+      let mut end = false;
+      match ast_node {
+        AST::ExprLine(expr_list) => {
+          match expr_list.first() {
+            Some(AST::Function(name, _)) if name == "END" => {
+              end = true;
+            },
+            _ => {}
+          }
+        },
+        _ => {}
+      }
+      if end {
+        // End of function definition, save it.
+        let name = mem::replace(&mut self.name, String::new());
+        let args = mem::replace(&mut self.args, ExprList::new());
+        let lines = mem::replace(&mut self.lines, ExprLines::new());
+        self.user_functions.insert(name, (args, lines));
+      } else {
+        // Collect the line.
+        self.lines.push(ast_node.clone());
+      }
+      return Ok(true);
+    }
+    let function;
     match ast_node {
-      // TODO: ExprList(Operator/Function...) where eats all
-      AST::ExprLine(expr_list) | AST::ExprList(expr_list) => {
-        for expr in expr_list {
-          let result = self.eval(expr)?;
-          if result.is_some() {
-            ret = result;
+      AST::Function(name, expr_list) if name == "TO" => { function = expr_list; },
+      _ => { return Ok(false); }
+    }
+    match function.first() {
+      Some(AST::Function(name, args)) => {
+        for arg in args {
+          match arg {
+            AST::Var(_) => {},
+            _ => {
+              return Err(format!("The procedure TO does not like {:?} as input.", arg));
+            }
           }
         }
+        self.name = name.clone();
+        self.args = args.clone();
+      },
+      Some(_) => {
+        return Err(format!("The procedure TO needs a name as its first input."));
+      },
+      None => {
+        return Err(format!("TO needs more input(s)."));
+      }
+    }
+    return Ok(true);
+  }
+
+  fn pops(&mut self) -> Result<AST, String> {
+    for (name, (args, lines)) in self.user_functions.iter() {
+      print!("TO {}", name);
+      for arg in args {
+        match arg {
+          AST::Var(var) => { print!(" :{}", var); }
+          _ => {}
+        }
+      }
+      println!();
+      for line in lines {
+        println!("{:?}", line);
+      }
+      println!("END");
+    }
+    Ok(AST::None)
+  }
+
+  fn local_state(&mut self) -> &mut LocalState {
+    self.stack_local_state.last_mut().unwrap()
+  }
+
+  fn eval_user_function(&mut self, name: &str) -> Result<AST, String> {
+    let args;
+    let lines;
+    // TODO: If user_functions was using Rc or RefCell, maybe I wouldn't have the problem here.
+    match self.user_functions.get(name) {
+      Some((_args, _lines)) => {
+        args = _args.clone();
+        lines = _lines.clone();
+      },
+      _ => { panic!("Invalid eval_user_function invocation {}", name); }
+    }
+    let mut new_local_state = LocalState::new();
+    // Setup the args as local vars.
+    for arg in args {
+      let var;
+      match arg {
+        AST::Var(_var) => { var = _var; }
+        _ => { panic!("Invalid function definition {}", name); }
+      }
+      let next_ast = self.local_state().remainder.pop_front();
+      match next_ast {
+        Some(ast) => {
+          new_local_state.vars.insert(var.to_string(), self.eval(&ast)?);
+        },
+        None => {
+          return Err(format!("{} needs more input(s).", name));
+        }
+      }
+    }
+    self.stack_local_state.push(new_local_state);
+    let mut ret = AST::None;
+    // Run the lines.
+    for line in lines {
+      ret = self.eval(&line)?;
+      match ret {
+        AST::FunctionReturn(_) => {
+          break;
+        },
+        AST::None => {},
+        _ => {
+          return Err(format!(
+              "You don't say what to do with the output of {:?}\n\
+               In function {}\n\
+               Statement   {:?}", ret, name, line));
+        }
+      }
+    }
+    self.stack_local_state.pop();
+    assert!(self.stack_local_state.len() > 0);
+    return Ok(ret);
+  }
+
+  fn eval(&mut self, ast_node: &AST) -> Result<AST, String> {
+    // We're currently defining a function.
+    if self.def_function(ast_node)? {
+      return Ok(AST::None);
+    }
+    let mut ret = AST::None;
+    match ast_node {
+      AST::Function(name, expr_list) => {
+        println!("{:?}", expr_list);
+        assert!(self.local_state().remainder.is_empty(), format!("{:?}", self.local_state().remainder));
+        self.local_state().remainder = VecDeque::from(expr_list.clone());
+        // TODO: Check for user defined & builtin functions here.
+        if self.user_functions.contains_key(name) {
+          ret = self.eval_user_function(name)?;
+        } else {
+          match name.as_str() {
+            "POPS" => { ret = self.pops()?; },
+            _ => {
+              return Err(format!("Unknown function {:?}", name));
+            }
+          }
+        }
+      },
+      AST::ExprLine(expr_list) => {
+        for expr in expr_list {
+          let result = self.eval(expr)?;
+          if result != AST::None {
+            ret = result;
+            break;
+          }
+        }
+        self.local_state().remainder.clear();
+      },
+      AST::ExprList(expr_list) => {
+        match expr_list.first() {
+          Some(first_element) => {
+            ret = self.eval(first_element)?;
+          },
+          None => {
+            ret = AST::List(ListType::new());
+          }
+        }
+        self.local_state().remainder.clear();
       },
       AST::Var(var_name) => {
         match self.vars.get(var_name) {
           Some(ast) => {
-            ret = Some(ast.clone());
+            ret = ast.clone();
           },
           None => {
             return Err(format!(":{} is not a Logo name.", var_name));
@@ -128,18 +313,18 @@ impl Evaluator {
         }
       },
       AST::Float(float) => {
-        ret = Some(AST::Float(*float));
+        ret = AST::Float(*float);
       },
       AST::List(list) => {
         // TODO: Try to get rid of this clone somehow.
-        ret = Some(AST::List(list.clone()));
+        ret = AST::List(list.clone());
       },
       AST::Word(string) => {
-        ret = Some(AST::Word(string.clone()));
+        ret = AST::Word(string.clone());
       },
       AST::Unary(Token::Negation, box_operand) => {
         let operand = self.eval_number(box_operand)?;
-        ret = Some(AST::Float(-operand));
+        ret = AST::Float(-operand);
       },
       // TODO: Need to implement all Binary operators.
       AST::Binary(operator, left_box, right_box) => {
@@ -154,7 +339,7 @@ impl Evaluator {
             panic!("Unknown binary operator {:?}", operator);
           }
         };
-        ret = Some(AST::Float(result));
+        ret = AST::Float(result);
       },
       AST::Prefix(_operator, _expr_list) => {
         println!("Unimplemented prefix operators");
@@ -167,30 +352,22 @@ impl Evaluator {
   }
 
   fn feed(&mut self, input: &str) {
-    println!("{:?}", input);
-    let tokens;
-    // TODO: Don't do any parsing as long as tokens end on LineCont.
-    // TODO: Don't call into lexer directly, parser uses the lexer.
-    match lexer::process(input) {
-      Ok(val) => tokens = val,
-      Err(err) => { println!("Tokenizing error: {:?}", err); return; }
-    }
-    let mut queue: VecDeque<lexer::Token> = tokens.into_iter().collect();
-    println!("{:?}", queue);
+    // println!("{:?}", input);
     let ast;
-    match parser::parse_line(&mut queue) {
+    match self.parser.parse(input) {
       Ok(val) => {
         ast = val;
         println!("{:?}", ast);
-        // rek_print(&val, "".to_string());
+        parser::rek_print(&ast, "".to_string());
       },
       Err(err) => {
         println!("Parsing error: {:?}", err);
         return;
       },
     }
-    println!("Eval: {:?}", self.eval(&ast));
-    println!("Eval: {:?}", self.eval(&ast));
+    println!("{}", format!("Eval: {:?}", self.eval(&ast)).replace("([", "[").replace("])", "]"));
+    // TODO: Occasionally try to run the following to make sure nothing is being lost from ast.
+    // println!("{}", format!("Eval: {:?}", self.eval(&ast)).replace("([", "[").replace("])", "]"));
   }
 }
 
@@ -204,25 +381,3 @@ fn main() {
     evaluator.feed(&input);
   }
 }
-
-  // pub fn exec_command(&mut self, command: &parser::Command, graphics: &mut Graphics) {
-  //   match *command {
-  //     parser::Command::Fd(val) => self.fd(val, graphics),
-  //     parser::Command::Bk(val) => self.bk(val, graphics),
-  //     parser::Command::Lt(val) => self.lt(val),
-  //     parser::Command::Rt(val) => self.rt(val),
-  //     parser::Command::Cs      => graphics.clearscreen(),
-  //     parser::Command::Repeat(cnt, ref boxed_command) => {
-  //       for _ in 0 .. cnt {
-  //         self.exec_command(boxed_command, graphics);
-  //       }
-  //     },
-  //     parser::Command::Block(ref block_commands) => {
-  //       for command in block_commands.iter() {
-  //         self.exec_command(command, graphics);
-  //       }
-  //     },
-  //     _ => (),
-  //   }
-  // }
-
