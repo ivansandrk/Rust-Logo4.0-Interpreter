@@ -11,13 +11,12 @@ mod parser;
 // use parser;
 
 // use std;
+
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::mem;
-use parser::{AST, ListType, ExprList, ExprLines};
+use parser::{AST, ListType, WordType, NumType};
 use lexer::Token;
-
-type ExprLines = ListType<AST>;  // AST here is AST::ExprLine.
 
 pub trait Graphics {
   // Draws a line from p1 to p2 using window center as origin point (0, 0), and
@@ -77,6 +76,8 @@ impl Turtle {
   }
 }
 
+type ArgsType = Vec<String>;
+
 #[derive(Default)]
 struct Evaluator {
   parser: parser::Parser,
@@ -89,15 +90,17 @@ struct Evaluator {
   stack_vars: Vec<HashMap<String, AST>>,
   // Remaining expressions.  ExprLine evaluation, List evaluation, and function evaluation each get
   // their own (the parent ones are preserved).
-  stack_rem: Vec<VecDeque<AST>>,
+  // stack_rem: Vec<VecDeque<AST>>,
+  // Current expression, (iterator) list.
+  stack_expr: Vec<ListType>,
 
   builtin_functions: HashMap<String, Box<Fn(&mut Evaluator) -> Result<AST, String>>>,
-  user_functions: HashMap<String, (ExprList, ExprLines)>,
+  user_functions: HashMap<String, (ArgsType, ListType)>,
 
   // Name, args, and lines of the currently defined function.
   name: String,
-  args: ExprList,
-  lines: ExprLines,
+  args: ArgsType,
+  lines: ListType,
 }
 
 impl Evaluator {
@@ -112,19 +115,16 @@ impl Evaluator {
 
   fn define_builtins(&mut self) {
     self.builtin_functions.insert("OP".to_string(), Box::new(|evaluator| {
-      Ok(AST::FunctionReturn(Box::new(evaluator.eval_next_remainder()?)))
+      Ok(AST::FunctionReturn(Box::new(evaluator.eval_next_expr()?)))
     }));
     self.builtin_functions.insert("OUTPUT".to_string(), Box::new(|evaluator| {
-      Ok(AST::FunctionReturn(Box::new(evaluator.eval_next_remainder()?)))
+      Ok(AST::FunctionReturn(Box::new(evaluator.eval_next_expr()?)))
     }));
     self.builtin_functions.insert("POPS".to_string(), Box::new(|evaluator| {
       for (name, (args, lines)) in evaluator.user_functions.iter() {
         print!("TO {}", name);
         for arg in args {
-          match arg {
-            AST::Var(var) => { print!(" :{}", var); }
-            _ => {}
-          }
+          print!(" :{}", arg);
         }
         println!();
         for line in lines {
@@ -141,7 +141,7 @@ impl Evaluator {
     }));
     self.builtin_functions.insert("MAKE".to_string(), Box::new(|evaluator| {
       let var = evaluator.get_next_word()?;
-      let expr = evaluator.eval_next_remainder()?;
+      let expr = evaluator.eval_next_expr()?;
       if evaluator.local_vars().contains_key(&var) {
         evaluator.local_vars().insert(var, expr);
       } else {
@@ -174,9 +174,9 @@ impl Evaluator {
   }
 
   // TODO: eval_next_as_number, eval_next, as_number ?
-  fn get_number(&mut self, ast_node: &AST) -> Result<f32, String> {
+  fn get_number(&mut self, ast_node: &AST) -> Result<NumType, String> {
     match self.eval(ast_node)? {
-      AST::Float(float) => { Ok(float) },
+      AST::Num(num) => { Ok(num) },
       _ => { Err(format!("Expr doesn't evaluate to a number {:?}", ast_node)) }
     }
   }
@@ -195,38 +195,27 @@ impl Evaluator {
     }
   }
 
-  fn get_next_number(&mut self) -> Result<f32, String> {
-    let next_ast = self.eval_next_remainder()?;
+  fn get_next_number(&mut self) -> Result<NumType, String> {
+    let next_ast = self.eval_next_expr()?;
     self.get_number(&next_ast)
   }
 
   fn get_next_list(&mut self) -> Result<ListType, String> {
-    let next_ast = self.eval_next_remainder()?;
+    let next_ast = self.eval_next_expr()?;
     self.get_list(&next_ast)
   }
 
   fn get_next_word(&mut self) -> Result<String, String> {
-    let next_ast = self.eval_next_remainder()?;
+    let next_ast = self.eval_next_expr()?;
     self.get_word(&next_ast)
   }
 
+  // TODO: REPEAT 4 [4] complains about what to do with 4, while EVAL [4] just returns [4].
+  // EVAL [1 2 FD 50 3] should return [1 2 3]
   fn eval_list(&mut self, list: &ListType) -> Result<(), String> {
-    self.stack_rem.push(VecDeque::new());
+    self.stack_expr.push(list.clone());
     let mut ret = Ok(());
-    for item in list {
-      match self.eval(&item) {
-        Ok(AST::None) => {},
-        Err(e) => {
-          ret = Err(e);
-          break;
-        },
-        Ok(other) => {
-          ret = Err(format!("You don't say what to do with the output of {:?}", other));
-          break;
-        }
-      }
-    }
-    while let Some(expr) = self.remainder().pop_front() {
+    while let Some(expr) = self.current_expr_list().pop_front() {
       match self.eval(&expr) {
         Ok(AST::None) => {},
         Err(e) => {
@@ -239,7 +228,7 @@ impl Evaluator {
         }
       }
     }
-    self.stack_rem.pop();
+    self.stack_expr.pop();
     return ret;
   }
 
@@ -249,8 +238,8 @@ impl Evaluator {
       let mut end = false;
       match ast_node {
         AST::ExprLine(expr_list) => {
-          match expr_list.first() {
-            Some(AST::Function(name, _)) => {
+          match expr_list.front() {
+            Some(AST::Function(name)) => {
               if name == "TO" {
                 return Err(format!("TO inside of function definition {}", self.name));
               } else if name == "END" {
@@ -265,35 +254,39 @@ impl Evaluator {
       if end {
         // End of function definition, save it.
         let name = mem::replace(&mut self.name, String::new());
-        let args = mem::replace(&mut self.args, ExprList::new());
-        let lines = mem::replace(&mut self.lines, ExprLines::new());
+        let args = mem::replace(&mut self.args, ArgsType::new());
+        let lines = mem::replace(&mut self.lines, ListType::new());
         self.user_functions.insert(name, (args, lines));
       } else {
         // Collect the line.
-        self.lines.push(ast_node.clone());
+        self.lines.push_back(ast_node.clone());
       }
       return Ok(true);
     }
-    let function;
-    match ast_node {
-      AST::Function(name, expr_list) if name == "TO" => { function = expr_list; },
-      _ => { return Ok(false); }
+    if ast_node != &AST::Function("TO".to_string()) {
+      return Ok(false);
     }
-    match function.first() {
-      Some(AST::Function(name, args)) => {
-        if self.builtin_functions.contains_key(name) {
+    // match ast_node {
+    //   AST::Function(name) if name == "TO" => {},
+    //   _ => { return Ok(false); }
+    // }
+    match self.current_expr_list().pop_front() {
+      Some(AST::Function(name)) => {
+        if self.builtin_functions.contains_key(&name) {
           return Err(format!("{} is already in use. Try a different name.", name));
         }
-        for arg in args {
+        let mut args = ArgsType::new();
+        while let Some(arg) = self.current_expr_list().pop_front() {
+          // TODO: Rewrite without match, using if let... ?
           match arg {
-            AST::Var(_) => {},
+            AST::Var(arg) => { args.push(arg); },
             _ => {
               return Err(format!("The procedure TO does not like {:?} as input.", arg));
             }
           }
         }
-        self.name = name.clone();
-        self.args = args.clone();
+        self.name = name;
+        self.args = args;
       },
       Some(_) => {
         return Err(format!("The procedure TO needs a name as its first input."));
@@ -309,12 +302,12 @@ impl Evaluator {
     self.stack_vars.last_mut().unwrap()
   }
 
-  fn remainder(&mut self) -> &mut VecDeque<AST> {
-    self.stack_rem.last_mut().unwrap()
+  fn current_expr_list(&mut self) -> &mut VecDeque<AST> {
+    self.stack_expr.last_mut().unwrap()
   }
 
-  fn eval_next_remainder(&mut self) -> Result<AST, String> {
-    let next_ast = self.remainder().pop_front();
+  fn eval_next_expr(&mut self) -> Result<AST, String> {
+    let next_ast = self.current_expr_list().pop_front();
     match next_ast {
       Some(ast) => {
         return self.eval(&ast);
@@ -323,6 +316,28 @@ impl Evaluator {
         return Err(format!("Need more input(s)."));
       }
     }
+  }
+
+  fn eval_builtin_function(&mut self, name: &str) -> Result<AST, String> {
+    // TODO: Try to do this part without taking the closure out.
+    // (*self.builtin_functions.get(name).unwrap())(self);
+    // let closure = self.builtin_functions.get(name).unwrap();
+    // return closure(self);
+
+    
+    let closure = self.builtin_functions.remove(name).unwrap();
+    match closure(self) {
+      r @ Ok(_) => {
+        self.builtin_functions.insert(name.to_string(), closure);
+        return r;
+      },
+      e @ Err(_) => {
+        self.builtin_functions.insert(name.to_string(), closure);
+        return e;
+      }
+    }
+    // ret = closure(self)?;
+    // self.builtin_functions.insert(name.clone(), closure);
   }
 
   fn eval_user_function(&mut self, name: &str) -> Result<AST, String> {
@@ -339,15 +354,11 @@ impl Evaluator {
     let mut local_vars: HashMap<String, AST> = HashMap::new();
     // Setup the args as local vars.
     for arg in args {
-      let var;
-      match arg {
-        AST::Var(_var) => { var = _var; }
-        _ => { panic!("Invalid function definition, arg not a AST::Var: {}", name); }
-      }
-      local_vars.insert(var.clone(), self.eval_next_remainder()?);
+      local_vars.insert(arg.clone(), self.eval_next_expr()?);
     }
     self.stack_vars.push(local_vars);
-    self.stack_rem.push(VecDeque::new());
+    // TODO: Probably don't need this push here?
+    self.stack_expr.push(VecDeque::new());
     let mut ret = AST::None;
     // Run the lines.
     let mut err = None;
@@ -376,7 +387,7 @@ impl Evaluator {
       }
     }
     self.stack_vars.pop();
-    self.stack_rem.pop();
+    self.stack_expr.pop();
     match err {
       None => { Ok(ret) },
       Some(err) => { err }
@@ -387,31 +398,15 @@ impl Evaluator {
     // self.print_locals();
     // self.print_globals();
     // println!("{:?}", ast_node);
-    // We're currently defining a function.
     if self.def_function(ast_node)? {
+      // We're currently defining a function.
       return Ok(AST::None);
     }
     let mut ret = AST::None;
     match ast_node {
-      AST::Function(name, expr_list) => {
-        assert!(self.remainder().is_empty(), format!("{:?}", self.remainder()));
-        self.remainder().extend(expr_list.clone());
+      AST::Function(name) => {
         if self.builtin_functions.contains_key(name) {
-          // TODO: Try to do this part without taking the closure out.
-          // (*self.builtin_functions.get(name).unwrap())(self);
-          let closure = self.builtin_functions.remove(name).unwrap();
-          match closure(self) {
-            Ok(result) => {
-              self.builtin_functions.insert(name.clone(), closure);
-              ret = result;
-            },
-            e @ Err(_) => {
-              self.builtin_functions.insert(name.clone(), closure);
-              return e;
-            }
-          }
-          // ret = closure(self)?;
-          // self.builtin_functions.insert(name.clone(), closure);
+          ret = self.eval_builtin_function(name)?;
         } else if self.user_functions.contains_key(name) {
           ret = self.eval_user_function(name)?;
         } else {
@@ -419,41 +414,28 @@ impl Evaluator {
         }
       },
       AST::ExprLine(expr_list) => {
-        self.stack_rem.push(VecDeque::new());
-        self.remainder().clear();
-        let mut has_remainder = false;
-        for expr in expr_list {
-          assert!(!has_remainder);
-          let result = self.eval(expr)?;
-          if self.remainder().len() > 0 {
-            has_remainder = true;
-          }
-          if result != AST::None {
-            ret = result;
-            break;
-          }
-        }
-        while let Some(expr) = self.remainder().pop_front() {
+        self.stack_expr.push(expr_list.clone());
+        while let Some(expr) = self.current_expr_list().pop_front() {
           ret = self.eval(&expr)?;
           if ret != AST::None {
             break;
           }
         }
-        self.stack_rem.pop();
+        self.stack_expr.pop();
       },
-      AST::ExprList(expr_list) => {
-        // Evaluates only the first expr and returns result (if any).
-        self.stack_rem.push(VecDeque::new());
-        match expr_list.first() {
-          Some(first_element) => {
-            ret = self.eval(first_element)?;
-          },
-          None => {
-            ret = AST::List(ListType::new());
-          }
+      AST::Parens(expr_list) => {
+        // Evaluates only the first expr and returns result (if any).  If the expression list is
+        // empty, returns the empty list.
+        if expr_list.is_empty() {
+          ret = AST::List(ListType::new());
+        } else {
+          self.stack_expr.push(expr_list.clone());
+          let next_expr = self.current_expr_list().pop_front().unwrap();
+          ret = self.eval(&next_expr)?;
+          self.stack_expr.pop();
         }
-        self.stack_rem.pop();
       },
+      // TODO: Make this one prettier, if let {} else if let {} else {} ...
       AST::Var(var_name) => {
         let mut has_local = false;
         if let Some(ast) = self.local_vars().get(var_name) {
@@ -468,8 +450,8 @@ impl Evaluator {
           }
         }
       },
-      AST::Float(float) => {
-        ret = AST::Float(*float);
+      AST::Num(num) => {
+        ret = AST::Num(*num);
       },
       AST::List(list) => {
         // TODO: Try to get rid of this clone somehow.
@@ -478,9 +460,9 @@ impl Evaluator {
       AST::Word(string) => {
         ret = AST::Word(string.clone());
       },
-      AST::Unary(Token::Negation, box_operand) => {
+      AST::Negation(box_operand) => {
         let operand = self.get_number(box_operand)?;
-        ret = AST::Float(-operand);
+        ret = AST::Num(-operand);
       },
       // TODO: Need to implement all Binary operators.
       AST::Binary(operator, left_box, right_box) => {
@@ -495,9 +477,10 @@ impl Evaluator {
             panic!("Unknown binary operator {:?}", operator);
           }
         };
-        ret = AST::Float(result);
+        ret = AST::Num(result);
       },
-      AST::Prefix(_operator, _expr_list) => {
+      // TODO: Implement.
+      AST::Nary(_operator, _expr_list) => {
         println!("Unimplemented prefix operators");
       },
       _x => {
@@ -521,10 +504,13 @@ impl Evaluator {
         return;
       },
     }
-    println!("{}", format!("Eval: {:?}", self.eval(&ast)).replace("([", "[").replace("])", "]"));
-    // TODO: Occasionally try to run the following to make sure nothing is being lost from ast.
-    // println!("{}", format!("Eval: {:?}", self.eval(&ast)).replace("([", "[").replace("])", "]"));
-    while let Some(rem) = self.stack_rem.pop() {
+    let result = self.eval(&ast);
+    if result != Ok(AST::None) {
+      println!("{}", format!("Eval: {:?}", self.eval(&ast)).replace("([", "[").replace("])", "]"));
+      // TODO: Occasionally try to run the following to make sure nothing is being lost from ast.
+      // println!("{}", format!("Eval: {:?}", self.eval(&ast)).replace("([", "[").replace("])", "]"));
+    }
+    while let Some(rem) = self.stack_expr.pop() {
       println!("Remainder: {:?}", rem);
     }
     assert!(self.stack_vars.len() > 0);
