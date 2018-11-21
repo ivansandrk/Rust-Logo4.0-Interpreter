@@ -77,6 +77,7 @@ impl Turtle {
 }
 
 type ArgsType = Vec<String>;
+type BuiltinFunctionType = Fn(&mut Evaluator) -> Result<AST, String>;
 
 #[derive(Default)]
 struct Evaluator {
@@ -94,7 +95,7 @@ struct Evaluator {
   // Current expression, (iterator) list.
   stack_expr: Vec<ListType>,
 
-  builtin_functions: HashMap<String, Box<Fn(&mut Evaluator) -> Result<AST, String>>>,
+  builtin_functions: HashMap<String, std::rc::Rc<Box<BuiltinFunctionType>>>,
   user_functions: HashMap<String, (ArgsType, ListType)>,
 
   // Name, args, and lines of the currently defined function.
@@ -113,14 +114,18 @@ impl Evaluator {
     evaluator
   }
 
+  fn add_builtin_function(&mut self, name: &str, function: Box<BuiltinFunctionType>) {
+    self.builtin_functions.insert(name.to_string(), std::rc::Rc::new(function));
+  }
+
   fn define_builtins(&mut self) {
-    self.builtin_functions.insert("OP".to_string(), Box::new(|evaluator| {
+    self.add_builtin_function("OP", Box::new(|evaluator| {
       Ok(AST::FunctionReturn(Box::new(evaluator.eval_next_expr()?)))
     }));
-    self.builtin_functions.insert("OUTPUT".to_string(), Box::new(|evaluator| {
+    self.add_builtin_function("OUTPUT", Box::new(|evaluator| {
       Ok(AST::FunctionReturn(Box::new(evaluator.eval_next_expr()?)))
     }));
-    self.builtin_functions.insert("POPS".to_string(), Box::new(|evaluator| {
+    self.add_builtin_function("POPS", Box::new(|evaluator| {
       for (name, (args, lines)) in evaluator.user_functions.iter() {
         print!("TO {}", name);
         for arg in args {
@@ -134,12 +139,12 @@ impl Evaluator {
       }
       Ok(AST::None)
     }));
-    self.builtin_functions.insert("PONS".to_string(), Box::new(|evaluator| {
+    self.add_builtin_function("PONS", Box::new(|evaluator| {
       evaluator.print_locals();
       evaluator.print_globals();
       Ok(AST::None)
     }));
-    self.builtin_functions.insert("MAKE".to_string(), Box::new(|evaluator| {
+    self.add_builtin_function("MAKE", Box::new(|evaluator| {
       let var = evaluator.get_next_word()?;
       let expr = evaluator.eval_next_expr()?;
       if evaluator.local_vars().contains_key(&var) {
@@ -149,7 +154,7 @@ impl Evaluator {
       }
       Ok(AST::None)
     }));
-    self.builtin_functions.insert("REPEAT".to_string(), Box::new(|evaluator| {
+    self.add_builtin_function("REPEAT", Box::new(|evaluator| {
       let repeat = evaluator.get_next_number()?;
       let list = evaluator.get_next_list()?;
       for _ in 0 .. repeat as i32 {
@@ -232,7 +237,7 @@ impl Evaluator {
     return ret;
   }
 
-  fn def_function(&mut self, ast_node: &AST) -> Result<bool, String> {
+  fn define_builtin_function(&mut self, ast_node: &AST) -> Result<bool, String> {
     // Already started defining.
     if self.name != "" {
       let mut end = false;
@@ -272,6 +277,7 @@ impl Evaluator {
     // }
     match self.current_expr_list().pop_front() {
       Some(AST::Function(name)) => {
+        // TODO: Fix.
         if self.builtin_functions.contains_key(&name) {
           return Err(format!("{} is already in use. Try a different name.", name));
         }
@@ -320,24 +326,9 @@ impl Evaluator {
 
   fn eval_builtin_function(&mut self, name: &str) -> Result<AST, String> {
     // TODO: Try to do this part without taking the closure out.
-    // (*self.builtin_functions.get(name).unwrap())(self);
-    // let closure = self.builtin_functions.get(name).unwrap();
-    // return closure(self);
-
-    
-    let closure = self.builtin_functions.remove(name).unwrap();
-    match closure(self) {
-      r @ Ok(_) => {
-        self.builtin_functions.insert(name.to_string(), closure);
-        return r;
-      },
-      e @ Err(_) => {
-        self.builtin_functions.insert(name.to_string(), closure);
-        return e;
-      }
-    }
-    // ret = closure(self)?;
-    // self.builtin_functions.insert(name.clone(), closure);
+    // (*self.builtions.get(name).unwrap())(self);
+    let closure = self.builtin_functions.get(name).unwrap().clone();
+    return closure(self);
   }
 
   fn eval_user_function(&mut self, name: &str) -> Result<AST, String> {
@@ -398,7 +389,7 @@ impl Evaluator {
     // self.print_locals();
     // self.print_globals();
     // println!("{:?}", ast_node);
-    if self.def_function(ast_node)? {
+    if self.define_builtin_function(ast_node)? {
       // We're currently defining a function.
       return Ok(AST::None);
     }
