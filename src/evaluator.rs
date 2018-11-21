@@ -10,7 +10,6 @@ mod parser;
 // use parser;
 
 // use std;
-// use parser;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::mem;
@@ -209,8 +208,6 @@ impl Evaluator {
   }
 
   fn eval_list(&mut self, list: &ListType) -> Result<(), String> {
-    // TODO: Evaluating a list should probably mess with remainder.
-    // TODO: Remove ? from this function when doing the remainder properly.
     self.stack_rem.push(VecDeque::new());
     let mut ret = Ok(());
     for item in list {
