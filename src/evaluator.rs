@@ -1,6 +1,8 @@
 #![allow(dead_code)]
 
-// TODO: Define WordType
+// *** TODOs
+// Define WordType
+// user functions should store args as Strings, not AST::Var(String)
 
 mod lexer;
 mod parser;
@@ -74,20 +76,6 @@ impl Turtle {
 }
 
 #[derive(Default)]
-struct LocalState {
-  vars: HashMap<String, AST>,
-  remainder: VecDeque<AST>,
-}
-
-impl LocalState {
-  fn new() -> LocalState {
-    LocalState {
-      ..Default::default()
-    }
-  }
-}
-
-#[derive(Default)]
 struct Evaluator {
   parser: parser::Parser,
   turtle: Turtle,
@@ -95,8 +83,11 @@ struct Evaluator {
   // Global variables.
   vars: HashMap<String, AST>,
 
-  // Local state, contains local variables and remainder used for function evaluation.
-  stack_local_state: Vec<LocalState>,
+  // Function local variables.
+  stack_vars: Vec<HashMap<String, AST>>,
+  // Remaining expressions.  ExprLine evaluation, List evaluation, and function evaluation each get
+  // their own (the parent ones are preserved).
+  stack_rem: Vec<VecDeque<AST>>,
 
   builtin_functions: HashMap<String, Box<Fn(&mut Evaluator) -> Result<AST, String>>>,
   user_functions: HashMap<String, (ExprList, ExprLines)>,
@@ -112,7 +103,7 @@ impl Evaluator {
     let mut evaluator = Evaluator {
       ..Default::default()
     };
-    evaluator.stack_local_state.push(LocalState::new());
+    evaluator.stack_vars.push(HashMap::new());
     evaluator.define_builtins();
     evaluator
   }
@@ -142,21 +133,15 @@ impl Evaluator {
       Ok(AST::None)
     }));
     self.builtin_functions.insert("PONS".to_string(), Box::new(|evaluator| {
-      println!("Locals:");
-      for (var, expr) in evaluator.local_state().vars.iter() {
-        println!("{} is {:?}", var, expr);
-      }
-      println!("Globals:");
-      for (var, expr) in evaluator.vars.iter() {
-        println!("{} is {:?}", var, expr);
-      }
+      evaluator.print_locals();
+      evaluator.print_globals();
       Ok(AST::None)
     }));
     self.builtin_functions.insert("MAKE".to_string(), Box::new(|evaluator| {
       let var = evaluator.get_next_word()?;
       let expr = evaluator.eval_next_remainder()?;
-      if evaluator.local_state().vars.contains_key(&var) {
-        evaluator.local_state().vars.insert(var, expr);
+      if evaluator.local_vars().contains_key(&var) {
+        evaluator.local_vars().insert(var, expr);
       } else {
         evaluator.vars.insert(var, expr);
       }
@@ -170,6 +155,20 @@ impl Evaluator {
       }
       Ok(AST::None)
     }));
+  }
+
+  fn print_locals(&mut self) {
+    println!("Locals:");
+    for (var, expr) in self.local_vars().iter() {
+      println!("{} is {:?}", var, expr);
+    }
+  }
+
+  fn print_globals(&mut self) {
+    println!("Globals:");
+    for (var, expr) in self.vars.iter() {
+      println!("{} is {:?}", var, expr);
+    }
   }
 
   // TODO: eval_next_as_number, eval_next, as_number ?
@@ -212,13 +211,36 @@ impl Evaluator {
   fn eval_list(&mut self, list: &ListType) -> Result<(), String> {
     // TODO: Evaluating a list should probably mess with remainder.
     // TODO: Remove ? from this function when doing the remainder properly.
+    self.stack_rem.push(VecDeque::new());
+    let mut ret = Ok(());
     for item in list {
-      let result = self.eval(&item)?;
-      if result != AST::None {
-        return Err(format!("You don't say what to do with the output of {:?}", result));
+      match self.eval(&item) {
+        Ok(AST::None) => {},
+        Err(e) => {
+          ret = Err(e);
+          break;
+        },
+        Ok(other) => {
+          ret = Err(format!("You don't say what to do with the output of {:?}", other));
+          break;
+        }
       }
     }
-    return Ok(());
+    while let Some(expr) = self.remainder().pop_front() {
+      match self.eval(&expr) {
+        Ok(AST::None) => {},
+        Err(e) => {
+          ret = Err(e);
+          break;
+        },
+        Ok(other) => {
+          ret = Err(format!("You don't say what to do with the output of {:?}", other));
+          break;
+        }
+      }
+    }
+    self.stack_rem.pop();
+    return ret;
   }
 
   fn def_function(&mut self, ast_node: &AST) -> Result<bool, String> {
@@ -283,12 +305,16 @@ impl Evaluator {
     return Ok(true);
   }
 
-  fn local_state(&mut self) -> &mut LocalState {
-    self.stack_local_state.last_mut().unwrap()
+  fn local_vars(&mut self) -> &mut HashMap<String, AST> {
+    self.stack_vars.last_mut().unwrap()
+  }
+
+  fn remainder(&mut self) -> &mut VecDeque<AST> {
+    self.stack_rem.last_mut().unwrap()
   }
 
   fn eval_next_remainder(&mut self) -> Result<AST, String> {
-    let next_ast = self.local_state().remainder.pop_front();
+    let next_ast = self.remainder().pop_front();
     match next_ast {
       Some(ast) => {
         return self.eval(&ast);
@@ -310,17 +336,18 @@ impl Evaluator {
       },
       _ => { panic!("Invalid eval_user_function invocation {}", name); }
     }
-    let mut new_local_state = LocalState::new();
+    let mut local_vars: HashMap<String, AST> = HashMap::new();
     // Setup the args as local vars.
     for arg in args {
       let var;
       match arg {
         AST::Var(_var) => { var = _var; }
-        _ => { panic!("Invalid function definition {}", name); }
+        _ => { panic!("Invalid function definition, arg not a AST::Var: {}", name); }
       }
-      new_local_state.vars.insert(var.to_string(), self.eval_next_remainder()?);
+      local_vars.insert(var.clone(), self.eval_next_remainder()?);
     }
-    self.stack_local_state.push(new_local_state);
+    self.stack_vars.push(local_vars);
+    self.stack_rem.push(VecDeque::new());
     let mut ret = AST::None;
     // Run the lines.
     let mut err = None;
@@ -348,8 +375,8 @@ impl Evaluator {
         }
       }
     }
-    self.stack_local_state.pop();
-    assert!(self.stack_local_state.len() > 0);
+    self.stack_vars.pop();
+    self.stack_rem.pop();
     match err {
       None => { Ok(ret) },
       Some(err) => { err }
@@ -357,7 +384,9 @@ impl Evaluator {
   }
 
   fn eval(&mut self, ast_node: &AST) -> Result<AST, String> {
-    println!("{:?}", ast_node);
+    // self.print_locals();
+    // self.print_globals();
+    // println!("{:?}", ast_node);
     // We're currently defining a function.
     if self.def_function(ast_node)? {
       return Ok(AST::None);
@@ -365,8 +394,8 @@ impl Evaluator {
     let mut ret = AST::None;
     match ast_node {
       AST::Function(name, expr_list) => {
-        assert!(self.local_state().remainder.is_empty(), format!("{:?}", self.local_state().remainder));
-        self.local_state().remainder = VecDeque::from(expr_list.clone());
+        assert!(self.remainder().is_empty(), format!("{:?}", self.remainder()));
+        self.remainder().extend(expr_list.clone());
         if self.builtin_functions.contains_key(name) {
           // TODO: Try to do this part without taking the closure out.
           // (*self.builtin_functions.get(name).unwrap())(self);
@@ -390,12 +419,13 @@ impl Evaluator {
         }
       },
       AST::ExprLine(expr_list) => {
-        self.local_state().remainder.clear();
+        self.stack_rem.push(VecDeque::new());
+        self.remainder().clear();
         let mut has_remainder = false;
         for expr in expr_list {
           assert!(!has_remainder);
           let result = self.eval(expr)?;
-          if self.local_state().remainder.len() > 0 {
+          if self.remainder().len() > 0 {
             has_remainder = true;
           }
           if result != AST::None {
@@ -403,14 +433,17 @@ impl Evaluator {
             break;
           }
         }
-        while let Some(expr) = self.local_state().remainder.pop_front() {
+        while let Some(expr) = self.remainder().pop_front() {
           ret = self.eval(&expr)?;
           if ret != AST::None {
             break;
           }
         }
+        self.stack_rem.pop();
       },
       AST::ExprList(expr_list) => {
+        // Evaluates only the first expr and returns result (if any).
+        self.stack_rem.push(VecDeque::new());
         match expr_list.first() {
           Some(first_element) => {
             ret = self.eval(first_element)?;
@@ -419,11 +452,11 @@ impl Evaluator {
             ret = AST::List(ListType::new());
           }
         }
-        self.local_state().remainder.clear();
+        self.stack_rem.pop();
       },
       AST::Var(var_name) => {
         let mut has_local = false;
-        if let Some(ast) = self.local_state().vars.get(var_name) {
+        if let Some(ast) = self.local_vars().get(var_name) {
           has_local = true;
           ret = ast.clone();
         }
@@ -480,8 +513,8 @@ impl Evaluator {
     match self.parser.parse(input) {
       Ok(val) => {
         ast = val;
-        println!("{:?}", ast);
-        parser::rek_print(&ast, "".to_string());
+        // println!("{:?}", ast);
+        // parser::rek_print(&ast, "".to_string());
       },
       Err(err) => {
         println!("Parsing error: {:?}", err);
@@ -491,6 +524,11 @@ impl Evaluator {
     println!("{}", format!("Eval: {:?}", self.eval(&ast)).replace("([", "[").replace("])", "]"));
     // TODO: Occasionally try to run the following to make sure nothing is being lost from ast.
     // println!("{}", format!("Eval: {:?}", self.eval(&ast)).replace("([", "[").replace("])", "]"));
+    while let Some(rem) = self.stack_rem.pop() {
+      println!("Remainder: {:?}", rem);
+    }
+    assert!(self.stack_vars.len() > 0);
+    assert_eq!(0, self.stack_vars[0].len());
   }
 }
 
