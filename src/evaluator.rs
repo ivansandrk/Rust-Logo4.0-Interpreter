@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+// TODO: Define WordType
+
 mod lexer;
 mod parser;
 // use lexer;
@@ -139,19 +141,38 @@ impl Evaluator {
       }
       Ok(AST::None)
     }));
+    self.builtin_functions.insert("PONS".to_string(), Box::new(|evaluator| {
+      println!("Locals:");
+      for (var, expr) in evaluator.local_state().vars.iter() {
+        println!("{} is {:?}", var, expr);
+      }
+      println!("Globals:");
+      for (var, expr) in evaluator.vars.iter() {
+        println!("{} is {:?}", var, expr);
+      }
+      Ok(AST::None)
+    }));
+    self.builtin_functions.insert("MAKE".to_string(), Box::new(|evaluator| {
+      let var = evaluator.get_next_word()?;
+      let expr = evaluator.eval_next_remainder()?;
+      if evaluator.local_state().vars.contains_key(&var) {
+        evaluator.local_state().vars.insert(var, expr);
+      } else {
+        evaluator.vars.insert(var, expr);
+      }
+      Ok(AST::None)
+    }));
     self.builtin_functions.insert("REPEAT".to_string(), Box::new(|evaluator| {
-      let next_ast = evaluator.eval_next_remainder()?;
-      let repeat = evaluator.get_number(&next_ast)?;
-      let next_ast = evaluator.eval_next_remainder()?;
-      let list = evaluator.get_list(&next_ast)?;
+      let repeat = evaluator.get_next_number()?;
+      let list = evaluator.get_next_list()?;
       for _ in 0 .. repeat as i32 {
         evaluator.eval_list(&list)?;
       }
-      println!("{}", repeat);
       Ok(AST::None)
     }));
   }
 
+  // TODO: eval_next_as_number, eval_next, as_number ?
   fn get_number(&mut self, ast_node: &AST) -> Result<f32, String> {
     match self.eval(ast_node)? {
       AST::Float(float) => { Ok(float) },
@@ -166,9 +187,31 @@ impl Evaluator {
     }
   }
 
+  fn get_word(&mut self, ast_node: &AST) -> Result<String, String> {
+    match self.eval(ast_node)? {
+      AST::Word(word) => { Ok(word) },
+      _ => { Err(format!("Expr doesn't evaluate to a word {:?}", ast_node)) }
+    }
+  }
+
+  fn get_next_number(&mut self) -> Result<f32, String> {
+    let next_ast = self.eval_next_remainder()?;
+    self.get_number(&next_ast)
+  }
+
+  fn get_next_list(&mut self) -> Result<ListType, String> {
+    let next_ast = self.eval_next_remainder()?;
+    self.get_list(&next_ast)
+  }
+
+  fn get_next_word(&mut self) -> Result<String, String> {
+    let next_ast = self.eval_next_remainder()?;
+    self.get_word(&next_ast)
+  }
+
   fn eval_list(&mut self, list: &ListType) -> Result<(), String> {
     // TODO: Evaluating a list should probably mess with remainder.
-    // TODO: Remove ? from this function.
+    // TODO: Remove ? from this function when doing the remainder properly.
     for item in list {
       let result = self.eval(&item)?;
       if result != AST::None {
@@ -178,15 +221,19 @@ impl Evaluator {
     return Ok(());
   }
 
-  fn def_function(&mut self, ast_node: &AST) -> Result<(bool), String> {
+  fn def_function(&mut self, ast_node: &AST) -> Result<bool, String> {
     // Already started defining.
     if self.name != "" {
       let mut end = false;
       match ast_node {
         AST::ExprLine(expr_list) => {
           match expr_list.first() {
-            Some(AST::Function(name, _)) if name == "END" => {
-              end = true;
+            Some(AST::Function(name, _)) => {
+              if name == "TO" {
+                return Err(format!("TO inside of function definition {}", self.name));
+              } else if name == "END" {
+                end = true;
+              }
             },
             _ => {}
           }
@@ -310,6 +357,7 @@ impl Evaluator {
   }
 
   fn eval(&mut self, ast_node: &AST) -> Result<AST, String> {
+    println!("{:?}", ast_node);
     // We're currently defining a function.
     if self.def_function(ast_node)? {
       return Ok(AST::None);
@@ -343,10 +391,21 @@ impl Evaluator {
       },
       AST::ExprLine(expr_list) => {
         self.local_state().remainder.clear();
+        let mut has_remainder = false;
         for expr in expr_list {
+          assert!(!has_remainder);
           let result = self.eval(expr)?;
+          if self.local_state().remainder.len() > 0 {
+            has_remainder = true;
+          }
           if result != AST::None {
             ret = result;
+            break;
+          }
+        }
+        while let Some(expr) = self.local_state().remainder.pop_front() {
+          ret = self.eval(&expr)?;
+          if ret != AST::None {
             break;
           }
         }
