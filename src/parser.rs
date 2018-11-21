@@ -1,13 +1,5 @@
 // *
-// - perhaps a parsing subsystem with an interface that just gives available expressions
-// - BoolExpr
-// - NoneExpr?
-// - ListExpr?
-// - List type definitely
-// - Logo has separate function and variable definitions.  It doesn't like builtin names for function names.
-// - TODO: Prefix operators should take only the first two following expressions, not everything
-//   (unless they open a paren, ie (+ 1 2 3 4) will give 10, while + 1 2 3 4 will give just 3)
-// - TODO: Drop use of VecDeque?
+// No comments here (for now).
 
 use lexer;
 
@@ -15,64 +7,24 @@ use std::collections::VecDeque;
 use std::mem;
 use lexer::Token;
 
-#[derive(Debug)]
-pub enum ValueExpr {
-  Num(i32),
-  Float(f32),
-  Var(String),
-
-  Add(Box<ValueExpr>, Box<ValueExpr>),
-  Subtract(Box<ValueExpr>, Box<ValueExpr>),
-  Multiply(Box<ValueExpr>, Box<ValueExpr>),
-  Divide(Box<ValueExpr>, Box<ValueExpr>),
-}
-
-#[derive(Debug)]
-pub enum Expr {
-  // Control flow commands.
-  Block(Vec<Expr>),
-  Repeat(u32, Box<Expr>),
-
-  // Values.
-  // Can be 180, 4.5, -10, 360/4, 4*10, 2+3, :mad, 20+100/:n
-  ValueExpr(),
-
-  // Turtle commands.
-  Fd(f32),
-  Bk(f32),
-  Rt(f32),
-  Lt(f32),
-
-  // Canvas commands.
-  Cs,
-
-  Unknown,
-  // Move { x: i32, y: i32 },
-}
-
-// Line represented as a list of expressions, or sub-list inside of a line.
-// Ie. "MAKE "R1 WORD (LIJEVI :R1 :K - 1) (DESNI :R1 (COUNT :R1) - :K)" is an ExprList,
-// but so is "(LIJEVI :R1 :K - 1)".
-pub type ExprList = Vec<AST>;
-pub type ExprLines = Vec<AST>;  // AST here is AST::ExprLine.
 pub type ListType = VecDeque<AST>;
+pub type WordType = String;
+pub type NumType = f32;
 
 // NumExpr, TODO: Remove Clone?
 #[derive(Debug, Clone, PartialEq)]
 pub enum AST {
-  Unary(Token, Box<AST>),  // TODO: enum Number here and below.
-  Binary(Token, Box<AST>, Box<AST>),
-  Prefix(Token, ExprList),  // Prefix style arithmetic operations, ie. + 3 5 = 8.
-  // Int(i32),  // TODO: Have both int and float num types.
-  Float(f32),
-  Function(String, ExprList),  // name, arguments and rest
+  Negation(Box<AST>),  // The only unary operator is negation.
+  Binary(Token, Box<AST>, Box<AST>),  // Arithmetic and comparison operators.
+  Nary(Token, ListType),  // + and * can take all args, eg. (+ 1 2 3 4) evaluates to 10.
+  Num(NumType),  // Numbers.  Currently only floats, maybe some day also ints.
+  Function(WordType),  // name
   FunctionReturn(Box<AST>),  // return value from function
-  Var(String),  // :ASD
-  Word(String),  // "BIRD
+  Var(WordType),  // :ASD
+  Word(WordType),  // "BIRD
   List(ListType), // [1 2 MAKE "A "BSD]
-  ExprList(ExprList),  // Exprs inside of parens
-  ExprLine(ExprList),  // Line of exprs
-  // ExprList line & ExprList lines ? Because line is only evaluated once, ie. ? 1 * 2 3 -> 2 (3 is ignored).
+  Parens(ListType),  // (1 2 + 3)
+  ExprLine(ListType),  // Line of ASTs
   // Parser returns None in case it doesn't have a fully parsed expression.  Ie. a function
   // definition, or a LineCont might cause the expression to span multiple input lines.
   None,
@@ -104,6 +56,16 @@ fn precedence(token: &Option<Token>) -> i32 {
   }
 }
 
+fn capture_list(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result<ListType, String> {
+  let mut list = ListType::new();
+  while queue.len() > 0 && queue.front() != Some(&Token::LineEnd) &&
+                            queue.front() != Some(&Token::RParen) &&
+                            queue.front() != Some(&Token::RBracket) {
+    list.push_back(parse_one(queue, last_token)?);
+  }
+  Ok(list)
+}
+
 fn parse_left(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result<AST, String> {
   let left;
   if queue.front() == Some(&Token::Whitespace) {
@@ -112,20 +74,13 @@ fn parse_left(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result
   let token = queue.pop_front();
   match token {
     Some(Token::Num(i)) => {
-      left = AST::Float(i as f32);
+      left = AST::Num(i as f32);
     },
     Some(Token::Float(f)) => {
-      left = AST::Float(f);
+      left = AST::Num(f);
     },
     Some(Token::Function(name)) => {
-      // TODO: Special Function "TO FOO :A :B\n...\nEND" -> have a special function for parsing it.
-      let mut expr_list = ExprList::new(); // 3 * (2 * ADD 1 2) + 5
-      while queue.len() > 0 && queue.front() != Some(&Token::LineEnd) &&
-                               queue.front() != Some(&Token::RParen) &&
-                               queue.front() != Some(&Token::RBracket) {
-        expr_list.push(parse_one(queue, &Some(Token::Function("".to_string())))?);
-      }
-      left = AST::Function(name, expr_list);
+      left = AST::Function(name);
     },
     Some(Token::Var(var)) => {
       left = AST::Var(var);
@@ -133,27 +88,16 @@ fn parse_left(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result
     Some(Token::Word(word)) => {
       left = AST::Word(word);
     },
-    // TODO: (+ 1 2 3) needs to be added as well.
     Some(Token::LParen) => {
-      let mut expr_list = ExprList::new();
-      while queue.len() > 0 && queue.front() != Some(&Token::LineEnd) &&
-                               queue.front() != Some(&Token::RParen) &&
-                               queue.front() != Some(&Token::RBracket) {
-        expr_list.push(parse_one(queue, &token)?);
-      }
+      let expr_list = capture_list(queue, &token)?;
       // RParen should be next, which is consumed by this LParen.
       if queue.pop_front() != Some(Token::RParen) {
         return Err(format!("unmatched left paren operand {:?} last_token {:?}", expr_list, last_token));
       }
-      left = AST::ExprList(expr_list);
+      left = AST::Parens(expr_list);
     },
     Some(Token::LBracket) => {
-      let mut list = ListType::new();
-      while queue.len() > 0 && queue.front() != Some(&Token::LineEnd) &&
-                               queue.front() != Some(&Token::RParen) &&
-                               queue.front() != Some(&Token::RBracket) {
-        list.push_back(parse_one(queue, &token)?);
-      }
+      let list = capture_list(queue, &token)?;
       // RBracket is next, and it's consumed by this LBracket.
       if queue.pop_front() != Some(Token::RBracket) {
         return Err(format!("unmatched left bracket list {:?} last_token {:?}", list, last_token));
@@ -164,7 +108,7 @@ fn parse_left(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result
       match queue.front() {
         Some(&Token::Num(_)) | Some(&Token::LParen) => {
           let operand = parse_left(queue, &Some(Token::Negation))?;
-          left = AST::Unary(Token::Negation, Box::new(operand));
+          left = AST::Negation(Box::new(operand));
         },
         _ => {
           return Err(format!("bad token after Minus queue {:?}", queue));
@@ -175,13 +119,15 @@ fn parse_left(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result
     Some(Token::Plus) | Some(Token::Minus) | Some(Token::Multiply) | Some(Token::Divide) |
     Some(Token::Modulo) | Some(Token::Less) | Some(Token::LessEq) | Some(Token::Greater) |
     Some(Token::GreaterEq) | Some(Token::Equal) => {
-      let mut expr_list = ExprList::new();
-      while queue.len() > 0 && queue.front() != Some(&Token::LineEnd) &&
-                               queue.front() != Some(&Token::RParen) &&
-                               queue.front() != Some(&Token::RBracket) {
-        expr_list.push(parse_one(queue, &Some(Token::Prefix))?);
+      if last_token == &Some(Token::LParen) &&
+         (token == Some(Token::Plus) || token == Some(Token::Multiply)) {
+        let expr_list = capture_list(queue, &Some(Token::Prefix))?;
+        left = AST::Nary(token.unwrap(), expr_list);
+      } else {
+        let l = parse_one(queue, &Some(Token::Prefix))?;
+        let r = parse_one(queue, &Some(Token::Prefix))?;
+        left = AST::Binary(token.unwrap(), Box::new(l), Box::new(r));
       }
-      left = AST::Prefix(token.unwrap(), expr_list);
     },
     _ => {
       return Err(format!("missing operand or not an operand {:?} last_token {:?} queue {:?}", token, last_token, queue));
@@ -274,10 +220,10 @@ impl Parser {
     }
 
     let mut tokens: VecDeque<Token> = tokens.into_iter().collect();
-    let mut expr_list = ExprList::new();
+    let mut expr_list = ListType::new();
     while tokens.front().is_some() &&
           tokens.front() != Some(&Token::LineEnd) {
-      expr_list.push(parse_one(&mut tokens, &None)?);
+      expr_list.push_back(parse_one(&mut tokens, &None)?);
     }
     if tokens.front() == Some(&Token::LineEnd) {
       tokens.pop_front();
@@ -289,13 +235,19 @@ impl Parser {
   }
 }
 
+fn print_list(list: &ListType, prefix: String) {
+  for (i, element) in list.iter().enumerate() {
+    rek_print(element, prefix.clone() + if i < list.len()-1 { "| " } else { "  " });
+  }
+}
+
 pub fn rek_print(item: &AST, prefix: String) {
   let len = prefix.len();
   if prefix.len() >= 2 {
     print!("{}+- ", &prefix[..len-2]);
   }
   match item {
-    AST::Float(num) => {
+    AST::Num(num) => {
       println!("{:?}", num);
     },
     AST::Var(var) => {
@@ -304,16 +256,16 @@ pub fn rek_print(item: &AST, prefix: String) {
     AST::Word(word) => {
       println!("\"{}", word);
     },
-    AST::Function(name, expr_list) => {
+    AST::Function(name) => {
       println!("{}", name);
-      rek_print(&AST::ExprList(expr_list.clone().to_vec()), prefix.clone() + "  ");
     },
-    AST::Prefix(token, expr_list) => {
+    AST::Nary(token, expr_list) => {
       println!("Prefix {:?}", token);
-      rek_print(&AST::ExprList(expr_list.clone().to_vec()), prefix.clone() + "  ");
+      print_list(expr_list, prefix);
+      // rek_print(&AST::Parens(expr_list.clone()), prefix.clone() + "  ");
     },
-    AST::Unary(operator, operand) => {
-      println!("{:?}", operator);
+    AST::Negation(operand) => {
+      println!("{:?}", Token::Negation);
       rek_print(operand, prefix.clone() + "  ");
     },
     AST::Binary(operator, left_operand, right_operand) => {
@@ -323,21 +275,18 @@ pub fn rek_print(item: &AST, prefix: String) {
     },
     AST::List(list) => {
       println!("{:?}", "LIST");
-      for (i, element) in list.iter().enumerate() {
-        rek_print(element, prefix.clone() + if i < list.len()-1 { "| " } else { "  " });
-      }
+      print_list(list, prefix);
     },
-    AST::ExprList(expr_list) => {
-      println!("EXPRESSION LIST");
-      for (i, element) in expr_list.iter().enumerate() {
-        rek_print(element, prefix.clone() + if i < expr_list.len()-1 { "| " } else { "  " });
-      }
+    AST::Parens(expr_list) => {
+      println!("PARENS");
+      print_list(expr_list, prefix);
     },
     AST::ExprLine(expr_list) => {
       println!("Expression line");
-      for (i, element) in expr_list.iter().enumerate() {
-        rek_print(element, prefix.clone() + if i < expr_list.len()-1 { "| " } else { "  " });
-      }
+      print_list(expr_list, prefix);
+      // for (i, element) in expr_list.iter().enumerate() {
+      //   rek_print(element, prefix.clone() + if i < expr_list.len()-1 { "| " } else { "  " });
+      // }
     },
     AST::None => {
       println!("None");
@@ -357,26 +306,26 @@ mod tests {
   fn test_line_ok(input: &str, expected: &[AST]) {
     let ast = Parser::new().parse(input).unwrap();
     // rek_print(&ast, "".to_string());
-    assert_eq!(AST::ExprLine(expected.to_vec()), ast, "\ninput: {}", input);
+    assert_eq!(AST::ExprLine(ListType::from(expected.clone().to_vec())), ast, "\ninput: {}", input);
   }
 
   fn Negation(operand: AST) -> AST {
-    AST::Unary(Token::Negation, Box::new(operand))
+    AST::Negation(Box::new(operand))
   }
 
   fn F(float: f32) -> AST {
-    AST::Float(float)
+    AST::Num(float)
   }
 
   fn I(int: i32) -> AST {
-    AST::Float(int as f32)
+    AST::Num(int as f32)
   }
 
-  fn Prefix(token: Token, expr_list: &[AST]) -> AST {
-    AST::Prefix(token, expr_list.to_vec())
+  fn Nary(token: Token, expr_list: &[AST]) -> AST {
+    AST::Nary(token, ListType::from(expr_list.clone().to_vec()))
   }
   fn PPlus(expr_list: &[AST]) -> AST {
-    Prefix(Token::Plus, expr_list)
+    Nary(Token::Plus, expr_list)
   }
 
   fn Binary(token: Token, left: AST, right: AST) -> AST {
@@ -415,27 +364,27 @@ mod tests {
       ("1 + (2 * (3 + 4 * -5) + -6 * -(-7 + -8)) * 9", &[
         Plus(I(1),
          Multiply(
-          AST::ExprList(vec!(Plus(
+          AST::Parens(ListType::from(vec!(Plus(
            Multiply(
             I(2),
-            AST::ExprList(vec!(Plus(
+            AST::Parens(ListType::from(vec!(Plus(
              I(3),
              Multiply(
               I(4),
               Negation(I(5))
              )
-            )))
+            ))))
            ),
            Multiply(
             Negation(I(6)),
             Negation(
-             AST::ExprList(vec!(Plus(
+             AST::Parens(ListType::from(vec!(Plus(
               Negation(I(7)),
               Negation(I(8))
-             )))
+             ))))
             )
            )
-          ))),
+          )))),
           I(9)
          )
         )
@@ -449,7 +398,7 @@ mod tests {
   fn line_cont() {
     let mut parser = Parser::new();
     assert_eq!(AST::None, parser.parse("1 2\\\n").unwrap());
-    assert_eq!(AST::ExprLine(vec![AST::Float(1.0), AST::Float(2.0), AST::Float(3.0)]),
+    assert_eq!(AST::ExprLine(ListType::from(vec![AST::Num(1.0), AST::Num(2.0), AST::Num(3.0)])),
                parser.parse("3").unwrap());
   }
 }

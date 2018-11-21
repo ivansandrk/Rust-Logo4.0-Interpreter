@@ -3,6 +3,7 @@
 // *** TODOs
 // Define WordType
 // user functions should store args as Strings, not AST::Var(String)
+// Logo has separate function and variable definitions.  It doesn't like builtin names for function names.
 
 mod lexer;
 mod parser;
@@ -15,6 +16,8 @@ use std::collections::VecDeque;
 use std::mem;
 use parser::{AST, ListType, ExprList, ExprLines};
 use lexer::Token;
+
+type ExprLines = ListType<AST>;  // AST here is AST::ExprLine.
 
 pub trait Graphics {
   // Draws a line from p1 to p2 using window center as origin point (0, 0), and
