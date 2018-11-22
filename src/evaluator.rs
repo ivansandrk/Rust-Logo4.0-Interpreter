@@ -89,13 +89,10 @@ struct Evaluator {
 
   // Function local variables.
   stack_vars: Vec<HashMap<String, AST>>,
-  // Remaining expressions.  ExprLine evaluation, List evaluation, and function evaluation each get
-  // their own (the parent ones are preserved).
-  // stack_rem: Vec<VecDeque<AST>>,
   // Current expression, (iterator) list.
   stack_expr: Vec<ListType>,
 
-  builtin_functions: HashMap<String, std::rc::Rc<Box<BuiltinFunctionType>>>,
+  builtin_functions: HashMap<String, std::rc::Rc<BuiltinFunctionType>>,
   user_functions: HashMap<String, (ArgsType, ListType)>,
 
   // Name, args, and lines of the currently defined function.
@@ -114,18 +111,23 @@ impl Evaluator {
     evaluator
   }
 
-  fn add_builtin_function(&mut self, name: &str, function: Box<BuiltinFunctionType>) {
-    self.builtin_functions.insert(name.to_string(), std::rc::Rc::new(function));
-  }
-
   fn define_builtins(&mut self) {
-    self.add_builtin_function("OP", Box::new(|evaluator| {
+    #![allow(unused_parens)]
+    macro_rules! add_builtin {
+      ($name:ident, $closure:tt) => {
+        self.builtin_functions.insert(
+            stringify!($name).to_string(),
+            std::rc::Rc::new($closure));
+      }
+    }
+    // TODO: Allow writing add_builtin!([OP, OUTPUT], closure...);
+    add_builtin!(OP, (|evaluator| {
       Ok(AST::FunctionReturn(Box::new(evaluator.eval_next_expr()?)))
     }));
-    self.add_builtin_function("OUTPUT", Box::new(|evaluator| {
+    add_builtin!(OUTPUT, (|evaluator| {
       Ok(AST::FunctionReturn(Box::new(evaluator.eval_next_expr()?)))
     }));
-    self.add_builtin_function("POPS", Box::new(|evaluator| {
+    add_builtin!(POPS, (|evaluator| {
       for (name, (args, lines)) in evaluator.user_functions.iter() {
         print!("TO {}", name);
         for arg in args {
@@ -139,12 +141,12 @@ impl Evaluator {
       }
       Ok(AST::None)
     }));
-    self.add_builtin_function("PONS", Box::new(|evaluator| {
+    add_builtin!(PONS, (|evaluator| {
       evaluator.print_locals();
       evaluator.print_globals();
       Ok(AST::None)
     }));
-    self.add_builtin_function("MAKE", Box::new(|evaluator| {
+    add_builtin!(MAKE, (|evaluator| {
       let var = evaluator.get_next_word()?;
       let expr = evaluator.eval_next_expr()?;
       if evaluator.local_vars().contains_key(&var) {
@@ -154,7 +156,7 @@ impl Evaluator {
       }
       Ok(AST::None)
     }));
-    self.add_builtin_function("REPEAT", Box::new(|evaluator| {
+    add_builtin!(REPEAT, (|evaluator| {
       let repeat = evaluator.get_next_number()?;
       let list = evaluator.get_next_list()?;
       for _ in 0 .. repeat as i32 {
@@ -325,8 +327,6 @@ impl Evaluator {
   }
 
   fn eval_builtin_function(&mut self, name: &str) -> Result<AST, String> {
-    // TODO: Try to do this part without taking the closure out.
-    // (*self.builtions.get(name).unwrap())(self);
     let closure = self.builtin_functions.get(name).unwrap().clone();
     return closure(self);
   }
