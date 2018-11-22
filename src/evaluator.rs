@@ -120,7 +120,16 @@ impl Evaluator {
             std::rc::Rc::new($closure));
       }
     }
-    // TODO: Allow writing add_builtin!([OP, OUTPUT], closure...);
+    // TODO: Allow writing add_builtin!(OP, OUTPUT, closure...);
+    // add_builtin!(OP, OUTPUT, (|evaluator| {
+    //   Ok(AST::FunctionReturn(Box::new(evaluator.eval_next_expr()?)))
+    // }));
+    // ->
+    // {
+    //   let rc = std::rc::Rc::new(|evaluator| {...});
+    //   self.builtin_functions.insert("OP".to_string(), rc.clone());
+    //   self.builtin_functions.insert("OUTPUT".to_string(), rc.clone());
+    // }
     add_builtin!(OP, (|evaluator| {
       Ok(AST::FunctionReturn(Box::new(evaluator.eval_next_expr()?)))
     }));
