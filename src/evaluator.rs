@@ -420,7 +420,6 @@ impl Evaluator {
           self.stack_expr.pop();
         }
       },
-      // TODO: Make this one prettier, if let {} else if let {} else {} ...
       AST::Var(var_name) => {
         if let Some(ast) = self.stack_vars.last().unwrap().get(var_name) {
           ret = ast.clone();
@@ -459,9 +458,26 @@ impl Evaluator {
         };
         ret = AST::Num(result);
       },
-      // TODO: Implement.
-      AST::Nary(_operator, _expr_list) => {
-        println!("Unimplemented prefix operators");
+      AST::Nary(operator, expr_list_orig) => {
+        let mut expr_list = expr_list_orig.clone();
+        let mut result;
+        if operator == &Token::Plus {
+          result = 0.0;
+        } else if operator == &Token::Multiply {
+          result = 1.0;
+        } else {
+          panic!("Unknown prefix operator {:?}", operator);
+        }
+        while let Some(operand) = expr_list.pop_front() {
+          let operand = self.get_number(&operand)?;
+          if operator == &Token::Plus {
+            result += operand;
+          } else if operator == &Token::Multiply {
+            result *= operand;
+          } else {
+          }
+        }
+        ret = AST::Num(result);
       },
       _x => {
         println!("Unimplemented eval AST {:?}", _x);
