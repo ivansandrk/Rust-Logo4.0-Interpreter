@@ -118,7 +118,12 @@ impl Evaluator {
         self.builtin_functions.insert(
             stringify!($name).to_string(),
             std::rc::Rc::new($closure));
-      }
+      };
+      ($name1:ident, $name2:ident, $closure:tt) => {
+        let rc = std::rc::Rc::new($closure);
+        self.builtin_functions.insert(stringify!($name1).to_string(), rc.clone());
+        self.builtin_functions.insert(stringify!($name2).to_string(), rc.clone());
+      };
     }
     // TODO: Allow writing add_builtin!(OP, OUTPUT, closure...);
     // add_builtin!(OP, OUTPUT, (|evaluator| {
@@ -130,10 +135,7 @@ impl Evaluator {
     //   self.builtin_functions.insert("OP".to_string(), rc.clone());
     //   self.builtin_functions.insert("OUTPUT".to_string(), rc.clone());
     // }
-    add_builtin!(OP, (|evaluator| {
-      Ok(AST::FunctionReturn(Box::new(evaluator.eval_next_expr()?)))
-    }));
-    add_builtin!(OUTPUT, (|evaluator| {
+    add_builtin!(OP, OUTPUT, (|evaluator: &mut Evaluator| {
       Ok(AST::FunctionReturn(Box::new(evaluator.eval_next_expr()?)))
     }));
     add_builtin!(POPS, (|evaluator| {
@@ -437,17 +439,12 @@ impl Evaluator {
       },
       // TODO: Make this one prettier, if let {} else if let {} else {} ...
       AST::Var(var_name) => {
-        let mut has_local = false;
-        if let Some(ast) = self.local_vars().get(var_name) {
-          has_local = true;
+        if let Some(ast) = self.stack_vars.last().unwrap().get(var_name) {
           ret = ast.clone();
-        }
-        if !has_local {
-          if let Some(ast) = self.vars.get(var_name) {
-            ret = ast.clone();
-          } else {
-            return Err(format!(":{} is not a Logo name.", var_name));
-          }
+        } else if let Some(ast) = self.vars.get(var_name) {
+          ret = ast.clone();
+        } else {
+          return Err(format!(":{} is not a Logo name.", var_name));
         }
       },
       AST::Num(num) => {
