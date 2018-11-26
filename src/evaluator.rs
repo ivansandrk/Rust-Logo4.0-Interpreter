@@ -253,55 +253,38 @@ impl Evaluator {
   fn define_builtin_function(&mut self, ast_node: &AST) -> Result<bool, String> {
     // Already started defining.
     if self.name != "" {
-      let mut end = false;
-      match ast_node {
-        AST::ExprLine(expr_list) => {
-          match expr_list.front() {
-            Some(AST::Function(name)) => {
-              if name == "TO" {
-                return Err(format!("TO inside of function definition {}", self.name));
-              } else if name == "END" {
-                end = true;
-              }
-            },
-            _ => {}
+      if let AST::ExprLine(expr_list) = ast_node {
+        if let Some(AST::Function(name)) = expr_list.front() {
+          if name == "TO" {
+            return Err(format!("TO inside of function definition {}", self.name));
+          } else if name == "END" {
+            // End of function definition, save it.
+            let name = mem::replace(&mut self.name, String::new());
+            let args = mem::replace(&mut self.args, ArgsType::new());
+            let lines = mem::replace(&mut self.lines, ListType::new());
+            self.user_functions.insert(name, (args, lines));
+          } else {
+            // Collect the line.
+            self.lines.push_back(ast_node.clone());
           }
-        },
-        _ => {}
-      }
-      if end {
-        // End of function definition, save it.
-        let name = mem::replace(&mut self.name, String::new());
-        let args = mem::replace(&mut self.args, ArgsType::new());
-        let lines = mem::replace(&mut self.lines, ListType::new());
-        self.user_functions.insert(name, (args, lines));
-      } else {
-        // Collect the line.
-        self.lines.push_back(ast_node.clone());
+        }
       }
       return Ok(true);
     }
     if ast_node != &AST::Function("TO".to_string()) {
       return Ok(false);
     }
-    // match ast_node {
-    //   AST::Function(name) if name == "TO" => {},
-    //   _ => { return Ok(false); }
-    // }
     match self.current_expr_list().pop_front() {
       Some(AST::Function(name)) => {
-        // TODO: Fix.
         if self.builtin_functions.contains_key(&name) {
           return Err(format!("{} is already in use. Try a different name.", name));
         }
         let mut args = ArgsType::new();
         while let Some(arg) = self.current_expr_list().pop_front() {
-          // TODO: Rewrite without match, using if let... ?
-          match arg {
-            AST::Var(arg) => { args.push(arg); },
-            _ => {
-              return Err(format!("The procedure TO does not like {:?} as input.", arg));
-            }
+          if let AST::Var(arg) = arg {
+            args.push(arg);
+          } else {
+            return Err(format!("The procedure TO does not like {:?} as input.", arg));
           }
         }
         self.name = name;
