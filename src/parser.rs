@@ -15,7 +15,8 @@ pub type NumType = f32;
 #[derive(Debug, Clone, PartialEq)]
 pub enum AST {
   Negation(Box<AST>),  // The only unary operator is negation.
-  Binary(Token, Box<AST>, Box<AST>),  // Arithmetic and comparison operators.
+  Binary(Token, Box<AST>, Box<AST>),  // Arithmetic  operators.
+  Comparison(Token, Box<AST>, Box<AST>),  // Comparison operators.
   Nary(Token, ListType),  // + and * can take all args, eg. (+ 1 2 3 4) evaluates to 10.
   Num(NumType),  // Numbers.  Currently only floats, maybe some day also ints.
   Function(WordType),  // name
@@ -53,6 +54,15 @@ fn precedence(token: &Option<Token>) -> i32 {
         _ => { panic!("Invalid token for precedence {:?}", token) }
       }
     }
+  }
+}
+
+fn is_comparison(token: &Option<Token>) -> bool {
+  match token {
+    None => { false },
+    Some(Token::Less) | Some(Token::LessEq) | Some(Token::Greater) | Some(Token::GreaterEq) |
+    Some(Token::Equal) => { true },
+    _ => { false }
   }
 }
 
@@ -126,7 +136,11 @@ fn parse_left(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result
       } else {
         let l = parse_one(queue, &Some(Token::Prefix))?;
         let r = parse_one(queue, &Some(Token::Prefix))?;
-        left = AST::Binary(token.unwrap(), Box::new(l), Box::new(r));
+        if is_comparison(&token) {
+          left = AST::Comparison(token.unwrap(), Box::new(l), Box::new(r));
+        } else {
+          left = AST::Binary(token.unwrap(), Box::new(l), Box::new(r));
+        }
       }
     },
     _ => {
@@ -186,7 +200,11 @@ fn parse_one(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result<
     }
     queue.pop_front();
     let right = parse_one(queue, &token)?;
-    left = AST::Binary(token.unwrap(), Box::new(left), Box::new(right));
+    if is_comparison(&token) {
+      left = AST::Comparison(token.unwrap(), Box::new(left), Box::new(right));
+    } else {
+      left = AST::Binary(token.unwrap(), Box::new(left), Box::new(right));
+    }
   }
 
   return Ok(left);

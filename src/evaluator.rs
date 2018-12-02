@@ -125,16 +125,6 @@ impl Evaluator {
         self.builtin_functions.insert(stringify!($name2).to_string(), rc.clone());
       };
     }
-    // TODO: Allow writing add_builtin!(OP, OUTPUT, closure...);
-    // add_builtin!(OP, OUTPUT, (|evaluator| {
-    //   Ok(AST::FunctionReturn(Box::new(evaluator.eval_next_expr()?)))
-    // }));
-    // ->
-    // {
-    //   let rc = std::rc::Rc::new(|evaluator| {...});
-    //   self.builtin_functions.insert("OP".to_string(), rc.clone());
-    //   self.builtin_functions.insert("OUTPUT".to_string(), rc.clone());
-    // }
     add_builtin!(OP, OUTPUT, (|evaluator: &mut Evaluator| {
       Ok(AST::FunctionReturn(Box::new(evaluator.eval_next_expr()?)))
     }));
@@ -250,7 +240,7 @@ impl Evaluator {
     return ret;
   }
 
-  fn define_builtin_function(&mut self, ast_node: &AST) -> Result<bool, String> {
+  fn define_user_function(&mut self, ast_node: &AST) -> Result<bool, String> {
     // Already started defining.
     if self.name != "" {
       if let AST::ExprLine(expr_list) = ast_node {
@@ -383,7 +373,7 @@ impl Evaluator {
     // self.print_locals();
     // self.print_globals();
     // println!("{:?}", ast_node);
-    if self.define_builtin_function(ast_node)? {
+    if self.define_user_function(ast_node)? {
       // We're currently defining a function.
       return Ok(AST::None);
     }
@@ -398,6 +388,7 @@ impl Evaluator {
           return Err(format!("Unknown function {:?}", name));
         }
       },
+      // TODO: Type that pushes during construction, and pops during destruction.
       AST::ExprLine(expr_list) => {
         self.stack_expr.push(expr_list.clone());
         while let Some(expr) = self.current_expr_list().pop_front() {
@@ -408,6 +399,7 @@ impl Evaluator {
         }
         self.stack_expr.pop();
       },
+      // TODO: Builtin functions behave differently if they open Parens.
       AST::Parens(expr_list) => {
         // Evaluates only the first expr and returns result (if any).  If the expression list is
         // empty, returns the empty list.
@@ -433,7 +425,6 @@ impl Evaluator {
         ret = AST::Num(*num);
       },
       AST::List(list) => {
-        // TODO: Try to get rid of this clone somehow.
         ret = AST::List(list.clone());
       },
       AST::Word(string) => {
@@ -443,7 +434,59 @@ impl Evaluator {
         let operand = self.get_number(box_operand)?;
         ret = AST::Num(-operand);
       },
-      // TODO: Need to implement all Binary operators.
+      AST::Comparison(operator, left_box, right_box) => {
+        let left = self.eval(left_box)?;
+        let right = self.eval(right_box)?;
+        let mut one_word = false;
+        for word in vec![&left, &right] {
+          match word {
+            AST::Num(_) => {},
+            AST::Word(_) => { one_word = true; },
+            _ => { return Err(format!("The comparison procedure needs a name or number.")); }
+          }
+        }
+        let result;
+        if !one_word {
+          let left = self.get_number(&left);
+          let right = self.get_number(&right);
+          result = match operator {
+            Token::Less => { left < right },
+            Token::LessEq => { left <= right },
+            Token::Greater => { left > right },
+            Token::GreaterEq => { left >= right },
+            Token::Equal => { left == right },
+            _ => {
+              panic!("Unknown comparison operator {:?}", operator);
+            }
+          };
+        } else {
+          let left = match left {
+            AST::Num(num) => {
+              format!("{}", num)
+            },
+            AST::Word(string) => { string },
+            _ => { unreachable!() }
+          };
+          let right = match right {
+            AST::Num(num) => {
+              format!("{}", num)
+            },
+            AST::Word(string) => { string },
+            _ => { unreachable!() }
+          };
+          result = match operator {
+            Token::Less => { left < right },
+            Token::LessEq => { left <= right },
+            Token::Greater => { left > right },
+            Token::GreaterEq => { left >= right },
+            Token::Equal => { left == right },
+            _ => {
+              panic!("Unknown comparison operator {:?}", operator);
+            }
+          };
+        }
+        ret = AST::Word( (if result { "TRUE" } else { "FALSE" }).to_string() );
+      },
       AST::Binary(operator, left_box, right_box) => {
         let left = self.get_number(left_box)?;
         let right = self.get_number(right_box)?;
