@@ -27,6 +27,7 @@ pub trait Graphics {
   fn clearscreen(&mut self);
 }
 
+#[derive(Default)]
 struct NullGraphics {
   commands: Vec<String>,
 }
@@ -41,29 +42,50 @@ impl Graphics for NullGraphics {
   }
 }
 
-#[derive(Default, Debug)]
+impl NullGraphics {
+  fn new() -> Box<Graphics> {
+    Box::new(NullGraphics {
+      ..Default::default()
+    })
+  }
+}
+
 pub struct Turtle {
   heading: f32, // 0 .. 359 degrees
   x: f32,
   y: f32,
+  graphics: Box<Graphics>,
+}
+
+impl Default for Turtle {
+  fn default() -> Turtle {
+    Turtle {
+      heading: 0.0,
+      x: 0.0,
+      y: 0.0,
+      graphics: NullGraphics::new(),
+    }
+  }
 }
 
 impl Turtle {
   pub fn new() -> Turtle {
-    Turtle { ..Default::default() }
+    Turtle {
+      ..Default::default()
+    }
   }
 
-  fn fd(&mut self, val: f32, graphics: &mut Graphics) {
+  fn fd(&mut self, val: f32) {
     let phi = (self.heading + 90.0) * std::f32::consts::PI / 180.0;
     let new_x = self.x + val * phi.cos();
     let new_y = self.y + val * phi.sin();
-    graphics.line((self.x, self.y), (new_x, new_y));
+    self.graphics.line((self.x, self.y), (new_x, new_y));
     self.x = new_x;
     self.y = new_y;
   }
 
-  fn bk(&mut self, val: f32, graphics: &mut Graphics) {
-    self.fd(-val, graphics);
+  fn bk(&mut self, val: f32) {
+    self.fd(-val);
   }
 
   fn lt(&mut self, val: f32) {
@@ -109,6 +131,10 @@ impl Evaluator {
     evaluator.stack_vars.push(HashMap::new());
     evaluator.define_builtins();
     evaluator
+  }
+
+  fn set_graphics(&mut self, graphics: Box<Graphics>) {
+    self.turtle.graphics = graphics;
   }
 
   fn define_builtins(&mut self) {
@@ -163,6 +189,26 @@ impl Evaluator {
       for _ in 0 .. repeat as i32 {
         evaluator.eval_list(&list)?;
       }
+      Ok(AST::None)
+    }));
+    add_builtin!(FD, FORWARD, (|evaluator: &mut Evaluator| {
+      let num = evaluator.get_next_number()?;
+      evaluator.turtle.fd(num);
+      Ok(AST::None)
+    }));
+    add_builtin!(BK, BACK, (|evaluator: &mut Evaluator| {
+      let num = evaluator.get_next_number()?;
+      evaluator.turtle.bk(num);
+      Ok(AST::None)
+    }));
+    add_builtin!(RT, RIGHT, (|evaluator: &mut Evaluator| {
+      let num = evaluator.get_next_number()?;
+      evaluator.turtle.rt(num);
+      Ok(AST::None)
+    }));
+    add_builtin!(LT, LEFT, (|evaluator: &mut Evaluator| {
+      let num = evaluator.get_next_number()?;
+      evaluator.turtle.lt(num);
       Ok(AST::None)
     }));
   }
