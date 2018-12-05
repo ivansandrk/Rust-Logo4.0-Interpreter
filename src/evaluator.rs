@@ -5,12 +5,12 @@
 // user functions should store args as Strings, not AST::Var(String)
 // Logo has separate function and variable definitions.  It doesn't like builtin names for function names.
 
-mod lexer;
-mod parser;
-// use lexer;
-// use parser;
+// mod lexer;
+// mod parser;
+use lexer;
+use parser;
 
-// use std;
+use std;
 
 use std::collections::HashMap;
 use std::collections::VecDeque;
@@ -96,13 +96,20 @@ impl Turtle {
   fn rt(&mut self, val: f32) {
     self.lt(-val);
   }
+
+  fn clearscreen(&mut self) {
+    self.graphics.clearscreen();
+    self.x = 0.0;
+    self.y = 0.0;
+    self.heading = 0.0;
+  }
 }
 
 type ArgsType = Vec<String>;
 type BuiltinFunctionType = Fn(&mut Evaluator) -> Result<AST, String>;
 
 #[derive(Default)]
-struct Evaluator {
+pub struct Evaluator {
   parser: parser::Parser,
   turtle: Turtle,
 
@@ -124,7 +131,7 @@ struct Evaluator {
 }
 
 impl Evaluator {
-  fn new() -> Self {
+  pub fn new() -> Self {
     let mut evaluator = Evaluator {
       ..Default::default()
     };
@@ -133,7 +140,7 @@ impl Evaluator {
     evaluator
   }
 
-  fn set_graphics(&mut self, graphics: Box<Graphics>) {
+  pub fn set_graphics(&mut self, graphics: Box<Graphics>) {
     self.turtle.graphics = graphics;
   }
 
@@ -209,6 +216,10 @@ impl Evaluator {
     add_builtin!(LT, LEFT, (|evaluator: &mut Evaluator| {
       let num = evaluator.get_next_number()?;
       evaluator.turtle.lt(num);
+      Ok(AST::None)
+    }));
+    add_builtin!(CS, CLEARSCREEN, (|evaluator: &mut Evaluator| {
+      evaluator.turtle.clearscreen();
       Ok(AST::None)
     }));
   }
@@ -575,7 +586,7 @@ impl Evaluator {
     return Ok(ret);
   }
 
-  fn feed(&mut self, input: &str) {
+  pub fn feed(&mut self, input: &str) {
     // println!("{:?}", input);
     let ast;
     match self.parser.parse(input) {
