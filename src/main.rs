@@ -73,8 +73,7 @@ impl MainState {
     let context = Rc::new(RefCell::new(context));
     let canvas = Rc::new(RefCell::new(canvas));
     let graphics = GgezGraphics::new(Rc::clone(&context), Rc::clone(&canvas));
-    let mut evaluator = evaluator::Evaluator::new();
-    evaluator.set_graphics(Box::new(graphics));
+    let evaluator = evaluator::Evaluator::new(Box::new(graphics));
 
     Self {
       context: context,

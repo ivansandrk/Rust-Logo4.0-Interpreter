@@ -14,6 +14,7 @@ use std;
 
 use std::collections::HashMap;
 use std::collections::VecDeque;
+use std::iter::FromIterator;
 use std::mem;
 use parser::{AST, ListType, WordType, NumType};
 use lexer::Token;
@@ -43,45 +44,75 @@ impl Graphics for NullGraphics {
 }
 
 impl NullGraphics {
-  fn new() -> Box<Graphics> {
-    Box::new(NullGraphics {
+  fn new() -> NullGraphics {
+    NullGraphics {
       ..Default::default()
-    })
+    }
   }
 }
 
 pub struct Turtle {
+  graphics: Box<Graphics>,
   heading: f32, // 0 .. 359 degrees
   x: f32,
   y: f32,
-  graphics: Box<Graphics>,
-}
-
-impl Default for Turtle {
-  fn default() -> Turtle {
-    Turtle {
-      heading: 0.0,
-      x: 0.0,
-      y: 0.0,
-      graphics: NullGraphics::new(),
-    }
-  }
+  pendown: bool,
 }
 
 impl Turtle {
-  pub fn new() -> Turtle {
+  pub fn new(graphics: Box<Graphics>) -> Turtle {
     Turtle {
-      ..Default::default()
+      graphics: graphics,
+      heading: 0.0,
+      x: 0.0,
+      y: 0.0,
+      pendown: true,
     }
+  }
+
+  fn setxy(&mut self, x: f32, y: f32) {
+    if self.pendown {
+      self.graphics.line((self.x, self.y), (x, y));
+    }
+    self.x = x;
+    self.y = y;
+  }
+
+  fn getxy(&mut self) -> (f32, f32) {
+    (self.x, self.y)
+  }
+
+  fn setheading(&mut self, heading: f32) {
+    self.heading = heading;
+  }
+
+  fn heading(&mut self) -> f32 {
+    self.heading
+  }
+
+  fn setx(&mut self, x: f32) {
+    let y = self.y;
+    self.setxy(x, y);
+  }
+
+  fn xcor(&mut self) -> f32 {
+    self.x
+  }
+
+  fn sety(&mut self, y: f32) {
+    let x = self.x;
+    self.setxy(x, y);
+  }
+
+  fn ycor(&mut self) -> f32 {
+    self.y
   }
 
   fn fd(&mut self, val: f32) {
     let phi = (self.heading + 90.0) * std::f32::consts::PI / 180.0;
     let new_x = self.x + val * phi.cos();
     let new_y = self.y + val * phi.sin();
-    self.graphics.line((self.x, self.y), (new_x, new_y));
-    self.x = new_x;
-    self.y = new_y;
+    self.setxy(new_x, new_y);
   }
 
   fn bk(&mut self, val: f32) {
@@ -97,18 +128,24 @@ impl Turtle {
     self.lt(-val);
   }
 
-  fn clearscreen(&mut self) {
+  fn home(&mut self) {
+    self.setxy(0.0, 0.0);
+    self.setheading(0.0);
+  }
+
+  fn clean(&mut self) {
     self.graphics.clearscreen();
-    self.x = 0.0;
-    self.y = 0.0;
-    self.heading = 0.0;
+  }
+
+  fn clearscreen(&mut self) {
+    self.home();
+    self.clean();
   }
 }
 
 type ArgsType = Vec<String>;
 type BuiltinFunctionType = Fn(&mut Evaluator) -> Result<AST, String>;
 
-#[derive(Default)]
 pub struct Evaluator {
   parser: parser::Parser,
   turtle: Turtle,
@@ -131,17 +168,22 @@ pub struct Evaluator {
 }
 
 impl Evaluator {
-  pub fn new() -> Self {
+  pub fn new(graphics: Box<Graphics>) -> Self {
     let mut evaluator = Evaluator {
-      ..Default::default()
+      parser: parser::Parser::new(),
+      turtle: Turtle::new(graphics),
+      vars: HashMap::new(),
+      stack_vars: Vec::new(),
+      stack_expr: Vec::new(),
+      builtin_functions: HashMap::new(),
+      user_functions: HashMap::new(),
+      name: String::new(),
+      args: ArgsType::new(),
+      lines: ListType::new(),
     };
     evaluator.stack_vars.push(HashMap::new());
     evaluator.define_builtins();
     evaluator
-  }
-
-  pub fn set_graphics(&mut self, graphics: Box<Graphics>) {
-    self.turtle.graphics = graphics;
   }
 
   fn define_builtins(&mut self) {
@@ -158,10 +200,52 @@ impl Evaluator {
         self.builtin_functions.insert(stringify!($name2).to_string(), rc.clone());
       };
     }
-    add_builtin!(OP, OUTPUT, (|evaluator: &mut Evaluator| {
-      Ok(AST::FunctionReturn(Box::new(evaluator.eval_next_expr()?)))
-    }));
+    macro_rules! add_direct_builtin {
+      ($name:ident, $func:ident) => {
+        add_builtin!($name, (|evaluator: &mut Evaluator| {
+          evaluator.turtle.$func();
+          Ok(AST::None)
+        }));
+      };
+      ($name1:ident, $name2:ident, $func:ident) => {
+        add_builtin!($name1, $name2, (|evaluator: &mut Evaluator| {
+          evaluator.turtle.$func();
+          Ok(AST::None)
+        }));
+      };
+    }
+    macro_rules! add_direct_builtin_num {
+      ($name:ident, $func:ident) => {
+        add_builtin!($name, (|evaluator: &mut Evaluator| {
+          let num = evaluator.get_next_number()?;
+          evaluator.turtle.$func(num);
+          Ok(AST::None)
+        }));
+      };
+      ($name1:ident, $name2:ident, $func:ident) => {
+        add_builtin!($name1, $name2, (|evaluator: &mut Evaluator| {
+          let num = evaluator.get_next_number()?;
+          evaluator.turtle.$func(num);
+          Ok(AST::None)
+        }));
+      };
+    }
+    macro_rules! add_direct_builtin_ret_num {
+      ($name:ident, $func:ident) => {
+        add_builtin!($name, (|evaluator: &mut Evaluator| {
+          let num = evaluator.turtle.$func();
+          Ok(AST::Num(num))
+        }));
+      };
+      ($name1:ident, $name2:ident, $func:ident) => {
+        add_builtin!($name1, $name2, (|evaluator: &mut Evaluator| {
+          let num = evaluator.turtle.$func();
+          Ok(AST::Num(num))
+        }));
+      };
+    }
     add_builtin!(POPS, (|evaluator| {
+      // TODO: Split this out into something like print_locals / print_globals.
       for (name, (args, lines)) in evaluator.user_functions.iter() {
         print!("TO {}", name);
         for arg in args {
@@ -180,16 +264,45 @@ impl Evaluator {
       evaluator.print_globals();
       Ok(AST::None)
     }));
+    add_builtin!(PR, PRINT, (|evaluator: &mut Evaluator| {
+      let object = evaluator.eval_next_expr()?;
+      println!("{:?}", object);
+      Ok(AST::None)
+    }));
+    add_builtin!(OP, OUTPUT, (|evaluator: &mut Evaluator| {
+      Ok(AST::FunctionReturn(Box::new(evaluator.eval_next_expr()?)))
+    }));
+
     add_builtin!(MAKE, (|evaluator| {
       let var = evaluator.get_next_word()?;
       let expr = evaluator.eval_next_expr()?;
-      if evaluator.local_vars().contains_key(&var) {
-        evaluator.local_vars().insert(var, expr);
-      } else {
-        evaluator.vars.insert(var, expr);
-      }
+      evaluator.set(var, expr);
       Ok(AST::None)
     }));
+    add_builtin!(LPUT, (|evaluator| {
+      // TODO: Support also words here.
+      // LPUT word1/list1 word2/list2
+      // list1 -> !word2 (list2)
+      // word1 + word2 -> word
+      let list1 = AST::List(evaluator.get_next_list()?);
+      let mut list2 = AST::List(evaluator.get_next_list()?);
+      if let AST::List(ref mut list) = list2 {
+        list.push_back(list1);
+      }
+      Ok(list2)
+    }));
+    add_builtin!(ITEM, (|evaluator| {
+      // TODO: Implement word and num also.
+      // ITEM num list/word/num
+      let num = evaluator.get_next_number()? as usize;
+      let list = evaluator.get_next_list()?;
+      if num < 1 || num > list.len() {
+        Err(format!("ITEM needs a number between 1 and {} as its first input.", list.len()))
+      } else {
+        Ok(list[num - 1].clone())
+      }
+    }));
+
     add_builtin!(REPEAT, (|evaluator| {
       let repeat = evaluator.get_next_number()?;
       let list = evaluator.get_next_list()?;
@@ -198,30 +311,51 @@ impl Evaluator {
       }
       Ok(AST::None)
     }));
-    add_builtin!(FD, FORWARD, (|evaluator: &mut Evaluator| {
-      let num = evaluator.get_next_number()?;
-      evaluator.turtle.fd(num);
+    add_builtin!(FOR, (|evaluator| {
+      // TODO: FOR with variable step.
+      let var = evaluator.get_next_word()?;
+      let start = evaluator.get_next_number()?;
+      let end = evaluator.get_next_number()?;
+      let list = evaluator.get_next_list()?;
+      let step = 1.0;
+      let mut i = start;
+      while i <= end {
+        evaluator.set(var.clone(), AST::Num(i));
+        evaluator.eval_list(&list)?;
+        i += step;
+      }
       Ok(AST::None)
     }));
-    add_builtin!(BK, BACK, (|evaluator: &mut Evaluator| {
-      let num = evaluator.get_next_number()?;
-      evaluator.turtle.bk(num);
+
+    add_builtin!(SETXY, (|evaluator: &mut Evaluator| {
+      let list = evaluator.get_next_list()?;
+      evaluator.stack_expr.push(list);
+      let x = evaluator.get_next_number()?;
+      let y = evaluator.get_next_number()?;
+      evaluator.turtle.setxy(x, y);
+      evaluator.stack_expr.pop();
       Ok(AST::None)
     }));
-    add_builtin!(RT, RIGHT, (|evaluator: &mut Evaluator| {
-      let num = evaluator.get_next_number()?;
-      evaluator.turtle.rt(num);
-      Ok(AST::None)
+    add_builtin!(GETXY, (|evaluator: &mut Evaluator| {
+      let (x, y) = evaluator.turtle.getxy();
+      let mut list = ListType::new();
+      list.push_back(AST::Num(x));
+      list.push_back(AST::Num(y));
+      Ok(AST::List(list))
     }));
-    add_builtin!(LT, LEFT, (|evaluator: &mut Evaluator| {
-      let num = evaluator.get_next_number()?;
-      evaluator.turtle.lt(num);
-      Ok(AST::None)
-    }));
-    add_builtin!(CS, CLEARSCREEN, (|evaluator: &mut Evaluator| {
-      evaluator.turtle.clearscreen();
-      Ok(AST::None)
-    }));
+    add_direct_builtin_num!(SETH, SETHEADING, setheading);
+    add_direct_builtin_num!(SETX, setx);
+    add_direct_builtin_num!(SETY, sety);
+    add_direct_builtin_ret_num!(HEADING, heading);
+    add_direct_builtin_ret_num!(XCOR, xcor);
+    add_direct_builtin_ret_num!(YCOR, ycor);
+    add_direct_builtin_num!(FD, FORWARD, fd);
+    add_direct_builtin_num!(BK, BACK, bk);
+    add_direct_builtin_num!(RT, RIGHT, rt);
+    add_direct_builtin_num!(LT, LEFT, lt);
+    add_direct_builtin!(CS, CLEARSCREEN, clearscreen);
+    add_direct_builtin!(CLEAN, clean);
+    add_direct_builtin!(HOME, home);
   }
 
   fn print_locals(&mut self) {
@@ -235,6 +369,14 @@ impl Evaluator {
     println!("Globals:");
     for (var, expr) in self.vars.iter() {
       println!("{} is {:?}", var, expr);
+    }
+  }
+
+  fn set(&mut self, var: WordType, expr: AST) {
+    if self.local_vars().contains_key(&var) {
+      self.local_vars().insert(var, expr);
+    } else {
+      self.vars.insert(var, expr);
     }
   }
 
@@ -602,7 +744,7 @@ impl Evaluator {
     }
     let result = self.eval(&ast);
     if result != Ok(AST::None) {
-      println!("{}", format!("Eval: {:?}", self.eval(&ast)).replace("([", "[").replace("])", "]"));
+      println!("{}", format!("Eval: {:?}", result).replace("([", "[").replace("])", "]"));
       // TODO: Occasionally try to run the following to make sure nothing is being lost from ast.
       // println!("{}", format!("Eval: {:?}", self.eval(&ast)).replace("([", "[").replace("])", "]"));
     }
@@ -616,7 +758,7 @@ impl Evaluator {
 
 fn main() {
   // 1 + (2 * (3 + 4 * -5) + -6 * -(-7 + -8)) * 9
-  let mut evaluator = Evaluator::new();
+  let mut evaluator = Evaluator::new(Box::new(NullGraphics::new()));
   loop {
     let mut input = String::new();
     std::io::stdin().read_line(&mut input).unwrap();
