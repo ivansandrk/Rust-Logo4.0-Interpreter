@@ -4,17 +4,13 @@
 // Define WordType
 // user functions should store args as Strings, not AST::Var(String)
 // Logo has separate function and variable definitions.  It doesn't like builtin names for function names.
+// MakeListType! macro
 
-// mod lexer;
-// mod parser;
-use lexer;
 use parser;
-
 use std;
 
 use std::collections::HashMap;
 use std::collections::VecDeque;
-use std::iter::FromIterator;
 use std::mem;
 use parser::{AST, ListType, WordType, NumType};
 use lexer::Token;
@@ -140,6 +136,14 @@ impl Turtle {
   fn clearscreen(&mut self) {
     self.home();
     self.clean();
+  }
+
+  fn pendown(&mut self) {
+    self.pendown = true;
+  }
+
+  fn penup(&mut self) {
+    self.pendown = false;
   }
 }
 
@@ -302,6 +306,17 @@ impl Evaluator {
         Ok(list[num - 1].clone())
       }
     }));
+    add_builtin!(LIST, (|evaluator| {
+      // TODO: LIST word/list1 word/list2 or (LIST ...)
+      // TODO: Does this need some type checking?  Don't think so - the only fully evaluated types
+      // are nums, lists, and words.
+      let item1 = evaluator.eval_next_expr()?;
+      let item2 = evaluator.eval_next_expr()?;
+      let mut list = ListType::new();
+      list.push_back(item1);
+      list.push_back(item2);
+      Ok(AST::List(list))
+    }));
 
     add_builtin!(REPEAT, (|evaluator| {
       let repeat = evaluator.get_next_number()?;
@@ -356,6 +371,8 @@ impl Evaluator {
     add_direct_builtin!(CS, CLEARSCREEN, clearscreen);
     add_direct_builtin!(CLEAN, clean);
     add_direct_builtin!(HOME, home);
+    add_direct_builtin!(PD, PENDOWN, pendown);
+    add_direct_builtin!(PU, PENUP, penup);
   }
 
   fn print_locals(&mut self) {
