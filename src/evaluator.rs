@@ -1,10 +1,8 @@
 #![allow(dead_code)]
 
 // *** TODOs
-// Define WordType
-// user functions should store args as Strings, not AST::Var(String)
-// Logo has separate function and variable definitions.  It doesn't like builtin names for function names.
 // MakeListType! macro
+// Implement (LIST arg1 arg2 arg3 ...) - functions that take N arguments
 
 use parser;
 use std;
@@ -439,7 +437,7 @@ impl Evaluator {
     }
   }
 
-  fn get_word(&mut self, ast_node: &AST) -> Result<String, String> {
+  fn get_word(&mut self, ast_node: &AST) -> Result<WordType, String> {
     match self.eval(ast_node)? {
       AST::Word(word) => { Ok(word) },
       _ => { Err(format!("Expr doesn't evaluate to a word {:?}", ast_node)) }
