@@ -12,6 +12,8 @@ use std;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::mem;
+use std::io::{BufReader, BufRead};
+use std::fs::File;
 use parser::{AST, ListType, WordType, NumType};
 use lexer::Token;
 
@@ -275,6 +277,31 @@ impl Evaluator {
     }));
     add_builtin!(OP, OUTPUT, (|evaluator: &mut Evaluator| {
       Ok(AST::FunctionReturn(Box::new(evaluator.eval_next_expr()?)))
+    }));
+
+    add_builtin!(LOAD, (|evaluator| {
+      let mut file_name = evaluator.get_next_word()?;
+      file_name = file_name.to_lowercase();
+      if !file_name.ends_with(".lgo") {
+        file_name += ".lgo";
+      }
+      let file = match File::open(file_name.clone()) {
+        Ok(file) => {file},
+        Err(err) => {
+          return Err(format!("Unable to open file {}: {:?}", file_name, err));
+        }
+      };
+      for line in BufReader::new(file).lines() {
+        match line {
+          Ok(line) => {
+            evaluator.feed(&line);
+          },
+          Err(err) => {
+            return Err(format!("Error reading line for {}: {:?}", file_name, err));
+          }
+        }
+      }
+      Ok(AST::None)
     }));
 
     add_builtin!(MAKE, (|evaluator| {
@@ -765,8 +792,8 @@ impl Evaluator {
       // TODO: Occasionally try to run the following to make sure nothing is being lost from ast.
       // println!("{}", format!("Eval: {:?}", self.eval(&ast)).replace("([", "[").replace("])", "]"));
     }
-    while let Some(rem) = self.stack_expr.pop() {
-      println!("Remainder: {:?}", rem);
+    if self.stack_expr.len() > 0 {
+      println!("stack_expr remainder: {:?}", self.stack_expr);
     }
     assert!(self.stack_vars.len() > 0);
     assert_eq!(0, self.stack_vars[0].len());
