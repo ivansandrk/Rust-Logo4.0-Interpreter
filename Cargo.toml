@@ -9,4 +9,4 @@ authors = ["isandrk"]
 
 [dependencies]
 #image = "0.20.0"
-ggez = "0.4"
+ggez = "0.9"
