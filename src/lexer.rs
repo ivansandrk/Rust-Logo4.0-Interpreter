@@ -1,20 +1,7 @@
-// - implement Iter(able) on Lexer
-// - forgo Strings, use &str everywhere
-// keywords go in parser
-// Lexer is fed a string of one or more lines, input must end with a '\n'
+#![allow(dead_code)] // TODO: Remove with KEYWORDS.
 
-// Need to import used modules.  If you use things like "std::str::Chars"
-// then you need to import std (use std).
-// use std;
-// use std::*;
-use std::iter::Peekable;
-use std::str::Chars;
-use std::collections::HashSet;
 use std::iter::FromIterator;
-use std::mem::replace;
 
-// GRAPHICS
-// ...
 const KEYWORDS: &str = "
   FD FORWARD BK BACK LT LEFT RT RIGHT
   SETPOS SETXY SETX SETY SETHEADING HOME ARC
@@ -91,11 +78,11 @@ pub enum Token {
 }
 
 struct Lexer<'a> {
-  iter: Peekable<Chars<'a>>,
+  iter: std::iter::Peekable<std::str::Chars<'a>>,
   tokens: Vec<Token>,
   row: u32,
   col: u32,
-  keyword_set: HashSet<&'static str>,
+  keyword_set: std::collections::HashSet<&'static str>,
 }
 
 impl<'a> Lexer<'a> {
@@ -105,7 +92,7 @@ impl<'a> Lexer<'a> {
       tokens: Vec::new(),
       row: 0,
       col: 0,
-      keyword_set: HashSet::from_iter(KEYWORDS.trim().split([' ', '\n'].as_ref())),
+      keyword_set: std::collections::HashSet::from_iter(KEYWORDS.trim().split([' ', '\n'].as_ref())),
     }
   }
 
@@ -157,9 +144,9 @@ impl<'a> Lexer<'a> {
       let c = self.peek_char();
       match c {
         None => { break; },
-        Some(c @ 'a' ... 'z') |
-        Some(c @ 'A' ... 'Z') |
-        Some(c @ '0' ... '9') |
+        Some(c @ 'a' ..= 'z') |
+        Some(c @ 'A' ..= 'Z') |
+        Some(c @ '0' ..= '9') |
         Some(c @ '_') |
         Some(c @ '.') |
         Some(c @ '?') => {
@@ -263,7 +250,7 @@ impl<'a> Lexer<'a> {
       self.tokens.push(token);
     }
 
-    let mut tokens = replace(&mut self.tokens, Vec::new());
+    let mut tokens = std::mem::replace(&mut self.tokens, Vec::new());
     // Make sure we end with a LineEnd/LineCont.
     if tokens.last() != Some(&Token::LineEnd) && tokens.last() != Some(&Token::LineCont) {
       if tokens.last() == Some(&Token::Escape) {
