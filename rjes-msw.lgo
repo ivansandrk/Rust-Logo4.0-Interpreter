@@ -1,0 +1,86 @@
+to latica :m :a
+  lt 180/:m
+  repeat :m [fd :a lt 360/:m]
+  rt 180/:m
+end
+to cvijet :n :m :a :d
+  repeat :n [fd :d/2 latica :m :a fd :d/2 rt 360/:n]
+end
+to trokuti :n :d
+  cs
+  make "x []
+  make "y []
+  repeat :n [fd :d make "x lput xcor :x make "y lput ycor :y bk :d rt 120/:n fd :d make "x lput xcor :x make "y lput ycor :y bk :d rt 240/:n]
+  for [i 1 :n] [pu setxy item :i*2-1 :x item :i*2-1 :y pd setxy item :i*2 :x item :i*2 :y]
+end
+to najveci :l
+  make "j 1 
+  make "cou count :l
+  for [i 2 :cou] [if (first item :j :l)<(first item :i :l) [make "j :i]]
+  op item :j :l
+end
+to bm :r :l
+  make "l1 []
+  make "lc count :l
+  for [i 1 :lc] [if not equal? item :i :l :r [make "l1 lput item :i :l :l1]]
+  op :l1
+end
+to zidsort :l
+  if (count :l)<2 [make "cigle :l stop]
+  make "cigle []
+  repeat (count :l)-1 [make "r najveci :l make "cigle lput :r :cigle make "l bm :r :l]
+  make "cigle se :cigle :l
+end
+to cigla :w
+  fd :h rt 90 fd :w rt 90 fd :h rt 90 fd :w bk :w rt 90
+end
+to nova_cigla
+  if empty? :cigle [op "false]
+  make "komad first first :cigle
+  ifelse (count :cigle)>1 [make "o bf :cigle] [make "o []]
+  make "c (last first :cigle)-1
+  ifelse :c>0 [make "cigle fput list :komad :c :o] [make "cigle :o]
+  op "true
+end
+to crtaj_red :parnost
+  if :parnost=0 [fd 2*:h]
+  rt 180
+  make "ostalo :w
+  while [and (:komad<:ostalo) (:ostalo>0)] [ifelse :komad>0 [cigla :komad make "ostalo :ostalo-:komad make "komad 0] [if not nova_cigla [op "false]]]
+  if :ostalo>0 [make "komad :komad-:ostalo cigla :ostalo]
+  op "true
+end
+to sredijednu
+  make "k item :i :cigle
+  if and (:komad=first :k) (not :bio) [make "bio "true make "k list first :k (1+last :k)] 
+  make "l fput :k :l
+end
+to sredigrupe
+  if not (:komad>0) [op :cigle]
+  if empty? :cigle [op (list list :komad 1)]	
+  make "l []
+  make "bio "false
+  make "cou count :cigle
+  for [i 1 :cou] [sredijednu]
+  if not :bio [make "l fput list :komad 1 :l]
+  op :l
+end
+to zid :w :n :l :h
+  cs rt 180
+  zidsort :l
+  make "broj_reda 0
+  make "komad 0
+  while [:broj_reda<:n] [make "broj_reda :broj_reda+1 if not crtaj_red remainder :broj_reda 2 [op 0]]
+  op sredigrupe
+end
+to m_povrsina :l :d
+  if not (list? :l) [op (count :l)*:d]
+  (local "i "s "c)
+  make "s 0
+  make "c count :l
+  for [i 1 :c] [make "s :s + m_povrsina item :i :l :d+1]
+  op :s
+end
+to povrsina :l
+  op m_povrsina :l 0
+end

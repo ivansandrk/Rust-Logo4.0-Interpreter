@@ -1,0 +1,27 @@
+TO DIJ :A :N
+  CS
+  MAKE "L []
+  REPEAT :N [FD :A RT 360/:N MAKE "L LPUT GETXY :L]
+  FOR "I 1 :N-1 [FOR "J :I+1 :N [PU SETXY ITEM :I :L PD SETXY ITEM :J :L]]
+END
+
+TO MN :A :N :M
+  CS
+  MAKE "L []
+  REPEAT :N [ \
+    MAKE "S LPUT GETXY [] \
+    REPEAT :M [ \
+      FD :A / :M \
+      MAKE "S LPUT GETXY :S \
+    ] \
+    RT 360/:N \
+    MAKE "L LPUT :S :L \
+  ]
+  MAKE "L LPUT ITEM 1 :L :L
+  FOR "I 1 :N [ \
+    FOR "J 1 :M+1 [ \
+      PU SETXY ITEM :J ITEM :I :L \
+      PD SETXY ITEM :J ITEM :I+1 :L \
+    ] \
+  ]
+END
