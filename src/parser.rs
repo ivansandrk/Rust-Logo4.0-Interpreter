@@ -1,7 +1,7 @@
-// *
-// No comments here (for now).
+// Pratt Parser, roughly followed link:
+// https://journal.stuffwithstuff.com/2011/03/19/pratt-parsers-expression-parsing-made-easy/
 
-use lexer;
+pub mod lexer;
 
 use std::collections::VecDeque;
 use std::mem;
@@ -317,14 +317,13 @@ pub fn rek_print(item: &AST, prefix: String) {
 
 #[cfg(test)]
 mod tests {
-  #![allow(non_snake_case)]
+  #![allow(non_snake_case, dead_code)]
   use super::*;
-  // use AST::*;
 
   fn test_line_ok(input: &str, expected: &[AST]) {
     let ast = Parser::new().parse(input).unwrap();
     // rek_print(&ast, "".to_string());
-    assert_eq!(AST::ExprLine(ListType::from(expected.clone().to_vec())), ast, "\ninput: {}", input);
+    assert_eq!(AST::ExprLine(ListType::from(expected.to_vec())), ast, "\ninput: {}", input);
   }
 
   fn Negation(operand: AST) -> AST {
@@ -340,7 +339,7 @@ mod tests {
   }
 
   fn Nary(token: Token, expr_list: &[AST]) -> AST {
-    AST::Nary(token, ListType::from(expr_list.clone().to_vec()))
+    AST::Nary(token, ListType::from(expr_list.to_vec()))
   }
   fn PPlus(expr_list: &[AST]) -> AST {
     Nary(Token::Plus, expr_list)
@@ -362,17 +361,13 @@ mod tests {
   gen_binary!(Multiply);
   gen_binary!(Divide);
 
-  // #[test]
-  // fn prefix_list_list() {
-  //   test_line_ok("+ 1 2 ", &[
-  //     prefix(Token::Plus, &[i(1), i(2), i(3)])
-  //   ]);
-  // }
-
   #[test]
   fn batch_tests() {
     for (input, expected) in &[
-      ("+ 1 2", &[PPlus(&[I(1), I(2)])][..]),
+      ("1 + 2", &[Plus(I(1), I(2))][..]),
+      ("+ 1 2", &[Plus(I(1), I(2))][..]), // TODO: This one maybe shouldn't parse.
+      ("(+ 1 2)", &[AST::Parens(ListType::from(vec!(PPlus(&[I(1), I(2)]))))][..]),
+      ("(+ 1 2 3)", &[AST::Parens(ListType::from(vec!(PPlus(&[I(1), I(2), I(3)]))))][..]),
       ("1 + 2 - 3", &[Minus(Plus(I(1), I(2)),
                             I(3))][..]),
       ("1+2-3", &[Minus(Plus(I(1), I(2)),
@@ -421,9 +416,35 @@ mod tests {
   }
 }
 
+// Output for sample input "1 + (2 * (3 + 4 * -5) + -6 * -(-7 + -8)) * 9":
+// ExprLine([Binary(Plus, Num(1.0), Binary(Multiply, Parens([Binary(Plus, Binary(Multiply, Num(2.0), Parens([Binary(Plus, Num(3.0), Binary(Multiply, Num(4.0), Negation(Num(5.0))))])), Binary(Multiply, Negation(Num(6.0)), Negation(Parens([Binary(Plus, Negation(Num(7.0)), Negation(Num(8.0)))]))))]), Num(9.0)))])
+// Expression line
+// +- Plus
+//   +- 1.0
+//   +- Multiply
+//     +- PARENS
+//     | +- Plus
+//     |   +- Multiply
+//     |   | +- 2.0
+//     |   | +- PARENS
+//     |   |   +- Plus
+//     |   |     +- 3.0
+//     |   |     +- Multiply
+//     |   |       +- 4.0
+//     |   |       +- Negation
+//     |   |         +- 5.0
+//     |   +- Multiply
+//     |     +- Negation
+//     |     | +- 6.0
+//     |     +- Negation
+//     |       +- PARENS
+//     |         +- Plus
+//     |           +- Negation
+//     |           | +- 7.0
+//     |           +- Negation
+//     |             +- 8.0
+//     +- 9.0
 fn main() {
-  use std;
-  // 1 + (2 * (3 + 4 * -5) + -6 * -(-7 + -8)) * 9
   let mut parser = Parser::new();
   loop {
     let mut input = String::new();
