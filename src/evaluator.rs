@@ -1,19 +1,13 @@
 #![allow(dead_code)]
 
-// *** TODOs
-// MakeListType! macro
-// Implement (LIST arg1 arg2 arg3 ...) - functions that take N arguments
-
 pub mod parser;
 pub mod lexer;
 // use parser;
 //use std;
 
-use std::collections::HashMap;
-use std::collections::VecDeque;
-use std::mem;
-use std::io::{BufReader, BufRead};
-use std::fs::File;
+use std::collections::HashMap; // TODO: Remove import, create types for the maps used.
+use std::collections::VecDeque; // TODO: Remove import, use proper named type.
+use std::io::BufRead;
 use parser::{AST, ListType, WordType, NumType};
 use lexer::Token;
 
@@ -285,13 +279,13 @@ impl Evaluator {
       if !file_name.ends_with(".lgo") {
         file_name += ".lgo";
       }
-      let file = match File::open(file_name.clone()) {
+      let file = match std::fs::File::open(file_name.clone()) {
         Ok(file) => {file},
         Err(err) => {
           return Err(format!("Unable to open file {}: {:?}", file_name, err));
         }
       };
-      for line in BufReader::new(file).lines() {
+      for line in std::io::BufReader::new(file).lines() {
         match line {
           Ok(line) => {
             evaluator.feed(&line);
@@ -492,9 +486,9 @@ impl Evaluator {
             return Err(format!("TO inside of function definition {}", self.name));
           } else if name == "END" {
             // End of function definition, save it.
-            let name = mem::replace(&mut self.name, String::new());
-            let args = mem::replace(&mut self.args, ArgsType::new());
-            let lines = mem::replace(&mut self.lines, ListType::new());
+            let name = std::mem::replace(&mut self.name, String::new());
+            let args = std::mem::replace(&mut self.args, ArgsType::new());
+            let lines = std::mem::replace(&mut self.lines, ListType::new());
             self.user_functions.insert(name, (args, lines));
           } else {
             // Collect the line.

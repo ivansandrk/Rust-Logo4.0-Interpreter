@@ -8,3 +8,9 @@ NOTES:
   * (also remove stale comment in peek_char)
   * Replace some uses of match with if to simplify code.
   * Get rid of KEYWORDS (not used).
+* Parser
+  * Parser should have its own "Tokens", only Parser should depend on Lexer (currently Evaluator uses Lexer::Token).
+* Evaluator
+  * MakeListType! macro (old).
+  * Implement (LIST arg1 arg2 arg3 ...) - functions that take N arguments (old).
+  * Remove imports, create proper types for VecDeque & HashMap.
