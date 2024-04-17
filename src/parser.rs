@@ -1,13 +1,11 @@
 // Pratt Parser, roughly followed link:
 // https://journal.stuffwithstuff.com/2011/03/19/pratt-parsers-expression-parsing-made-easy/
 
-pub mod lexer;
-
-use std::collections::VecDeque;
-use std::mem;
+use lexer;
 use lexer::Token;
 
-pub type ListType = VecDeque<AST>;
+pub type TokenList = std::collections::VecDeque<Token>;
+pub type ListType = std::collections::VecDeque<AST>;
 pub type WordType = String;
 pub type NumType = f32;
 
@@ -66,7 +64,7 @@ fn is_comparison(token: &Option<Token>) -> bool {
   }
 }
 
-fn capture_list(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result<ListType, String> {
+fn capture_list(queue: &mut TokenList, last_token: &Option<Token>) -> Result<ListType, String> {
   let mut list = ListType::new();
   while queue.len() > 0 && queue.front() != Some(&Token::LineEnd) &&
                             queue.front() != Some(&Token::RParen) &&
@@ -76,7 +74,7 @@ fn capture_list(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Resu
   Ok(list)
 }
 
-fn parse_left(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result<AST, String> {
+fn parse_left(queue: &mut TokenList, last_token: &Option<Token>) -> Result<AST, String> {
   let left;
   if queue.front() == Some(&Token::Whitespace) {
     queue.pop_front();
@@ -151,7 +149,7 @@ fn parse_left(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result
   return Ok(left);
 }
 
-fn parse_one(queue: &mut VecDeque<Token>, last_token: &Option<Token>) -> Result<AST, String> {
+fn parse_one(queue: &mut TokenList, last_token: &Option<Token>) -> Result<AST, String> {
   let mut left = parse_left(queue, last_token)?;
 
   loop {
@@ -234,10 +232,10 @@ impl Parser {
     }
     if !self.saved_tokens.is_empty() {
       self.saved_tokens.append(&mut tokens);
-      tokens = mem::replace(&mut self.saved_tokens, Vec::new());
+      tokens = std::mem::replace(&mut self.saved_tokens, Vec::new());
     }
 
-    let mut tokens: VecDeque<Token> = tokens.into_iter().collect();
+    let mut tokens: TokenList = tokens.into_iter().collect();
     let mut expr_list = ListType::new();
     while tokens.front().is_some() &&
           tokens.front() != Some(&Token::LineEnd) {
