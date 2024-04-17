@@ -4,8 +4,10 @@
 // MakeListType! macro
 // Implement (LIST arg1 arg2 arg3 ...) - functions that take N arguments
 
-use parser;
-use std;
+pub mod parser;
+pub mod lexer;
+// use parser;
+//use std;
 
 use std::collections::HashMap;
 use std::collections::VecDeque;
