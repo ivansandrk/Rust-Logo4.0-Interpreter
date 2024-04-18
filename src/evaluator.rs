@@ -2,6 +2,7 @@
 
 pub mod parser;
 pub mod lexer;
+pub mod turtle;
 // use parser;
 //use std;
 
@@ -11,144 +12,12 @@ use std::io::BufRead;
 use parser::{AST, ListType, WordType, NumType};
 use lexer::Token;
 
-pub trait Graphics {
-  // Draws a line from p1 to p2 using window center as origin point (0, 0), and
-  // having the x-axis grow left->right, and y-axis down->up.
-  fn line(&mut self, p1: (f32, f32), p2: (f32, f32));
-
-  // Clears the screen.
-  fn clearscreen(&mut self);
-}
-
-#[derive(Default)]
-struct NullGraphics {
-  commands: Vec<String>,
-}
-
-impl Graphics for NullGraphics {
-  fn line(&mut self, p1: (f32, f32), p2: (f32, f32)) {
-    self.commands.push(format!("line {},{} {},{}", p1.0, p1.1, p2.0, p2.1));
-  }
-
-  fn clearscreen(&mut self) {
-    self.commands.push(format!("clearscreen"));
-  }
-}
-
-impl NullGraphics {
-  fn new() -> NullGraphics {
-    NullGraphics {
-      ..Default::default()
-    }
-  }
-}
-
-pub struct Turtle {
-  graphics: Box<Graphics>,
-  heading: f32, // 0 .. 359 degrees
-  x: f32,
-  y: f32,
-  pendown: bool,
-}
-
-impl Turtle {
-  pub fn new(graphics: Box<Graphics>) -> Turtle {
-    Turtle {
-      graphics: graphics,
-      heading: 0.0,
-      x: 0.0,
-      y: 0.0,
-      pendown: true,
-    }
-  }
-
-  fn setxy(&mut self, x: f32, y: f32) {
-    if self.pendown {
-      self.graphics.line((self.x, self.y), (x, y));
-    }
-    self.x = x;
-    self.y = y;
-  }
-
-  fn getxy(&mut self) -> (f32, f32) {
-    (self.x, self.y)
-  }
-
-  fn setheading(&mut self, heading: f32) {
-    self.heading = heading;
-  }
-
-  fn heading(&mut self) -> f32 {
-    self.heading
-  }
-
-  fn setx(&mut self, x: f32) {
-    let y = self.y;
-    self.setxy(x, y);
-  }
-
-  fn xcor(&mut self) -> f32 {
-    self.x
-  }
-
-  fn sety(&mut self, y: f32) {
-    let x = self.x;
-    self.setxy(x, y);
-  }
-
-  fn ycor(&mut self) -> f32 {
-    self.y
-  }
-
-  fn fd(&mut self, val: f32) {
-    let phi = (self.heading + 90.0) * std::f32::consts::PI / 180.0;
-    let new_x = self.x + val * phi.cos();
-    let new_y = self.y + val * phi.sin();
-    self.setxy(new_x, new_y);
-  }
-
-  fn bk(&mut self, val: f32) {
-    self.fd(-val);
-  }
-
-  fn lt(&mut self, val: f32) {
-    // TODO: Clamp the heading perhaps to only [0, 360).
-    self.heading += val;
-  }
-
-  fn rt(&mut self, val: f32) {
-    self.lt(-val);
-  }
-
-  fn home(&mut self) {
-    self.setxy(0.0, 0.0);
-    self.setheading(0.0);
-  }
-
-  fn clean(&mut self) {
-    self.graphics.clearscreen();
-  }
-
-  fn clearscreen(&mut self) {
-    self.home();
-    self.clean();
-  }
-
-  fn pendown(&mut self) {
-    self.pendown = true;
-  }
-
-  fn penup(&mut self) {
-    self.pendown = false;
-  }
-}
-
 type ArgsType = Vec<String>;
 type BuiltinFunctionType = Fn(&mut Evaluator) -> Result<AST, String>;
 
-pub struct Evaluator {
+pub struct Evaluator<'a> {
   parser: parser::Parser,
-  turtle: Turtle,
+  turtle: turtle::Turtle<'a>,
 
   // Global variables.
   vars: HashMap<String, AST>,
@@ -167,11 +36,11 @@ pub struct Evaluator {
   lines: ListType,
 }
 
-impl Evaluator {
-  pub fn new(graphics: Box<Graphics>) -> Self {
+impl<'a> Evaluator<'a> {
+  pub fn new(graphics: &'a mut dyn turtle::Graphics) -> Self {
     let mut evaluator = Evaluator {
       parser: parser::Parser::new(),
-      turtle: Turtle::new(graphics),
+      turtle: turtle::Turtle::new(graphics),
       vars: HashMap::new(),
       stack_vars: Vec::new(),
       stack_expr: Vec::new(),
@@ -796,7 +665,8 @@ impl Evaluator {
 
 fn main() {
   // 1 + (2 * (3 + 4 * -5) + -6 * -(-7 + -8)) * 9
-  let mut evaluator = Evaluator::new(Box::new(NullGraphics::new()));
+  let mut graphics = turtle::GraphicsStub::new();
+  let mut evaluator = Evaluator::new(&mut graphics);
   loop {
     let mut input = String::new();
     std::io::stdin().read_line(&mut input).unwrap();
