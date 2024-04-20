@@ -4,42 +4,19 @@ pub trait Graphics {
   fn line(&mut self, p1: (f32, f32), p2: (f32, f32));
 
   // Clears the screen.
-  fn clearscreen(&mut self);
+  fn clear(&mut self);
 }
 
-#[derive(Default, Debug)]
-pub struct GraphicsStub {
-  commands: Vec<String>,
-}
-
-impl Graphics for GraphicsStub {
-  fn line(&mut self, p1: (f32, f32), p2: (f32, f32)) {
-    self.commands.push(format!("line {},{} {},{}", p1.0, p1.1, p2.0, p2.1));
-  }
-
-  fn clearscreen(&mut self) {
-    self.commands.push(format!("clearscreen"));
-  }
-}
-
-impl GraphicsStub {
-  pub fn new() -> GraphicsStub {
-    GraphicsStub {
-      ..Default::default()
-    }
-  }
-}
-
-pub struct Turtle<'a> {
-  graphics: &'a mut dyn Graphics,
+pub struct Turtle {
+  graphics: Box<dyn Graphics>,
   heading: f32, // 0 .. 359 degrees
   x: f32,
   y: f32,
   pendown: bool,
 }
 
-impl<'a> Turtle<'a> {
-  pub fn new(graphics: &mut dyn Graphics) -> Turtle {
+impl Turtle {
+  pub fn new(graphics: Box<dyn Graphics>) -> Turtle {
     Turtle {
       graphics: graphics,
       heading: 0.0,
@@ -113,7 +90,7 @@ impl<'a> Turtle<'a> {
   }
 
   pub fn clean(&mut self) {
-    self.graphics.clearscreen();
+    self.graphics.clear();
   }
 
   pub fn clearscreen(&mut self) {
@@ -127,6 +104,35 @@ impl<'a> Turtle<'a> {
 
   pub fn penup(&mut self) {
     self.pendown = false;
+  }
+}
+
+#[derive(Debug, Clone)]
+pub enum Command {
+  Line(f32, f32, f32, f32), // x1, y1, x2, y2
+  Clear,
+}
+
+#[derive(Default, Debug, Clone)]
+pub struct GraphicsStub {
+  invocations: std::rc::Rc<std::cell::RefCell<Vec<Command>>>,
+}
+
+impl Graphics for GraphicsStub {
+  fn line(&mut self, p1: (f32, f32), p2: (f32, f32)) {
+    self.invocations.borrow_mut().push(Command::Line(p1.0, p1.1, p2.0, p2.1));
+  }
+
+  fn clear(&mut self) {
+    self.invocations.borrow_mut().push(Command::Clear);
+  }
+}
+
+impl GraphicsStub {
+  pub fn new() -> GraphicsStub {
+    GraphicsStub {
+      ..Default::default()
+    }
   }
 }
 
@@ -147,21 +153,40 @@ mod tests {
   //   assert_eq!(expected, lexed);
   // }
 
+  // Don't check turtle values (also can't really check them while doing things, only can check everything at end),
+  // check instead the stub.invocations at the end, have a helper method that does the comparison, pass in an array of expected Command's,
+  // also do some rounding with the floats (define an eps, or use a library function for comparison), 
+
   #[test]
   fn draw_square() {
-    //  let mut evaluator = Evaluator::new(Box::new(turtle::NullGraphics::new()));
-    // TODO: let mut? g = NullGraphics::new();
-    let mut stub = GraphicsStub::new();
-    // let graphics = Box::new(spy);
-    let mut turtle = Turtle::new(&mut stub);
-    turtle.fd(10.0);
+    let stub = GraphicsStub::new();
+    let mut turtle = Turtle::new(Box::new(stub.clone()));
     let expected: Vec<String> = vec![];  
+
     println!("{:?}", turtle.x);
     println!("{:?}", turtle.y);
     println!("{:?}", turtle.heading);
     println!("{:?}", turtle.pendown);
-    println!("{:?}", stub.commands);
+    println!("{:?}", stub.invocations);
+
+    turtle.fd(10.0);
+
+    println!("{:?}", turtle.x);
+    println!("{:?}", turtle.y);
+    println!("{:?}", turtle.heading);
+    println!("{:?}", turtle.pendown);
+    println!("{:?}", stub.invocations);
+
+    turtle.fd(10.0);
+
+    println!("{:?}", turtle.x);
+    println!("{:?}", turtle.y);
+    println!("{:?}", turtle.heading);
+    println!("{:?}", turtle.pendown);
+    println!("{:?}", stub.invocations);
+
     assert_eq!(true, false);
+
     // assert_eq!(expected, actual);
   }
 }

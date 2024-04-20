@@ -1,5 +1,6 @@
 NOTES:
 * Implement Logo list as VecDeque.
+* Code coverage for tests (cargo-llvm-cov?).
 * Lexer
   * Implement Iter(able) on Lexer (? old comment).
   * Forgo Strings, use &str everywhere (? old comment).

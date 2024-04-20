@@ -15,9 +15,9 @@ use lexer::Token;
 type ArgsType = Vec<String>;
 type BuiltinFunctionType = Fn(&mut Evaluator) -> Result<AST, String>;
 
-pub struct Evaluator<'a> {
+pub struct Evaluator {
   parser: parser::Parser,
-  turtle: turtle::Turtle<'a>,
+  turtle: turtle::Turtle,
 
   // Global variables.
   vars: HashMap<String, AST>,
@@ -36,8 +36,8 @@ pub struct Evaluator<'a> {
   lines: ListType,
 }
 
-impl<'a> Evaluator<'a> {
-  pub fn new(graphics: &'a mut dyn turtle::Graphics) -> Self {
+impl Evaluator {
+  pub fn new(graphics: Box<turtle::Graphics>) -> Self {
     let mut evaluator = Evaluator {
       parser: parser::Parser::new(),
       turtle: turtle::Turtle::new(graphics),
@@ -665,8 +665,8 @@ impl<'a> Evaluator<'a> {
 
 fn main() {
   // 1 + (2 * (3 + 4 * -5) + -6 * -(-7 + -8)) * 9
-  let mut graphics = turtle::GraphicsStub::new();
-  let mut evaluator = Evaluator::new(&mut graphics);
+  let graphics = Box::new(turtle::GraphicsStub::new());
+  let mut evaluator = Evaluator::new(graphics);
   loop {
     let mut input = String::new();
     std::io::stdin().read_line(&mut input).unwrap();
