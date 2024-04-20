@@ -109,8 +109,36 @@ impl Turtle {
 
 #[derive(Debug, Clone)]
 pub enum Command {
-  Line(f32, f32, f32, f32), // x1, y1, x2, y2
+  Line((f32, f32), (f32, f32)), // p1, p2
   Clear,
+}
+
+fn feq(a: f32, b: f32) -> bool {
+  // TODO: There must be a better way of handling this.
+  (a - b).abs() < (f32::EPSILON * 100.0)
+}
+
+impl PartialEq for Command {
+  fn eq(&self, other: &Self) -> bool {
+    match (self, other) {
+      (&Command::Line(s1, s2), &Command::Line(o1, o2)) => {
+        feq(s1.0, o1.0) && feq(s1.1, o1.1) &&
+        feq(s2.0, o2.0) && feq(s2.1, o2.1)
+      },
+      (&Command::Clear, &Command::Clear) => {true},
+      _ => false,
+    }
+  }
+}
+
+// Returns a Vec of Command::Line connecting all the points:
+// [(p0, p1), (p1, p2), ..., (pN-1, pN)]
+pub fn points_to_line_commands(points: &Vec<(f32, f32)>) -> Vec<Command> {
+  let mut ret = vec![];
+  for i in 0..points.len().max(1)-1 {
+    ret.push(Command::Line(points[i], points[i + 1]));
+  }
+  ret
 }
 
 #[derive(Default, Debug, Clone)]
@@ -120,7 +148,7 @@ pub struct GraphicsStub {
 
 impl Graphics for GraphicsStub {
   fn line(&mut self, p1: (f32, f32), p2: (f32, f32)) {
-    self.invocations.borrow_mut().push(Command::Line(p1.0, p1.1, p2.0, p2.1));
+    self.invocations.borrow_mut().push(Command::Line(p1, p2));
   }
 
   fn clear(&mut self) {
@@ -136,57 +164,261 @@ impl GraphicsStub {
   }
 }
 
-// TODO: Turtle tests with NullGraphics.
 #[cfg(test)]
 mod tests {
+  #![allow(non_snake_case)]
   use super::*;
 
-  // fn test_ok(input: &str, expected: &[Token]) {
-  //   let lexed = Lexer::new(input).process();
-  //   let expected = Ok(expected.to_vec());
-  //   assert_eq!(expected, lexed);
-  // }
+  // TODO: Make a macro to compress the test code even more, test_turtle(|mut turtle| { ... }) can be shortened more.
 
-  // fn test_err(input: &str, expected: &str) {
-  //   let lexed = Lexer::new(input).process();
-  //   let expected = Err(expected.to_string());
-  //   assert_eq!(expected, lexed);
-  // }
+  macro_rules! CON {
+    ( $( $x:expr ),* $(,)? ) => {
+        {
+            let mut temp_vec = Vec::new();
+            $(
+                temp_vec.push($x);
+            )*
+            points_to_line_commands(&temp_vec)
+        }
+    };
+  }
 
-  // Don't check turtle values (also can't really check them while doing things, only can check everything at end),
-  // check instead the stub.invocations at the end, have a helper method that does the comparison, pass in an array of expected Command's,
-  // also do some rounding with the floats (define an eps, or use a library function for comparison), 
+  #[test]
+  fn test_points_to_line_commands() {
+    let points = vec![(0.0, 0.0), (0.0, 1.0), (1.0, 1.0), (1.0, 0.0)];
+    let expected = vec![
+      Command::Line((0.0, 0.0), (0.0, 1.0)),
+      Command::Line((0.0, 1.0), (1.0, 1.0)),
+      Command::Line((1.0, 1.0), (1.0, 0.0))
+    ];
+    let actual = points_to_line_commands(&points);
+    assert_eq!(expected, actual);
+  }
+
+  fn test_turtle<F>(test: F) where F: FnOnce(Turtle) -> Vec<Command> {
+    let stub = GraphicsStub::new();
+    let turtle = Turtle::new(Box::new(stub.clone()));
+    let expected = test(turtle);
+    let actual = (*stub.invocations).take();
+    assert_eq!(expected, actual);
+  }
+
+  #[test]
+  fn test_fd() {
+    test_turtle(
+      |mut turtle| {
+        turtle.fd(10.0);
+        CON!((0.0, 0.0), (0.0, 10.0))
+      }
+    );
+  }
+
+  #[test]
+  fn test_bk() {
+    test_turtle(
+      |mut turtle| {
+        turtle.bk(10.0);
+        CON!((0.0, 0.0), (0.0, -10.0))
+      }
+    );
+  }
+
+  #[test]
+  fn test_rt() {
+    test_turtle(
+      |mut turtle| {
+        turtle.rt(90.0);
+        turtle.fd(10.0);
+        CON!((0.0, 0.0), (10.0, 0.0))
+      }
+    );
+  }
+
+  #[test]
+  fn test_lt() {
+    test_turtle(
+      |mut turtle| {
+        turtle.lt(90.0);
+        turtle.fd(10.0);
+        CON!((0.0, 0.0), (-10.0, 0.0))
+      }
+    );
+  }
+
+  #[test]
+  fn test_setxy() {
+    test_turtle(
+      |mut turtle| {
+        turtle.setxy(10.0, 20.0);
+        CON!((0.0, 0.0), (10.0, 20.0))
+      }
+    );
+  }
+
+  #[test]
+  fn test_getxy() {
+    let (mut x, mut y) = (0.0, 0.0);
+    test_turtle(
+      |mut turtle| {
+        turtle.fd(20.0);
+        turtle.rt(90.0);
+        turtle.fd(10.0);
+        (x, y) = turtle.getxy();
+        CON!(
+          (0.0, 0.0),
+          (0.0, 20.0),
+          (10.0, 20.0),
+        )
+      }
+    );
+    assert!(feq(10.0, x));
+    assert!(feq(20.0, y));
+  }
+
+  #[test]
+  fn test_setheading() {
+    test_turtle(
+      |mut turtle| {
+        turtle.setheading(180.0);
+        turtle.fd(10.0);
+        CON!((0.0, 0.0), (0.0, -10.0))
+      }
+    );
+  }
+
+  #[test]
+  fn test_getheading() {
+    let mut heading = 0.0;
+    test_turtle(
+      |mut turtle| {
+        turtle.lt(120.0);
+        heading = turtle.heading();
+        CON!()
+      }
+    );
+    assert!(feq(120.0, heading));
+  }
+
+  #[test]
+  fn test_setx() {
+    test_turtle(
+      |mut turtle| {
+        turtle.setx(15.0);
+        CON!((0.0, 0.0), (15.0, 0.0))
+      }
+    );
+  }
+
+  #[test]
+  fn test_xcor() {
+    let mut x = 0.0;
+    test_turtle(
+      |mut turtle| {
+        turtle.lt(90.0);
+        turtle.fd(5.0);
+        x = turtle.xcor();
+        CON!((0.0, 0.0), (-5.0, 0.0))
+      }
+    );
+    assert!(feq(-5.0, x));
+  }
+
+  #[test]
+  fn test_sety() {
+    test_turtle(
+      |mut turtle| {
+        turtle.sety(25.0);
+        CON!((0.0, 0.0), (0.0, 25.0))
+      }
+    );
+  }
+
+  #[test]
+  fn test_ycor() {
+    let mut y = 0.0;
+    test_turtle(
+      |mut turtle| {
+        turtle.fd(30.0);
+        y = turtle.ycor();
+        CON!((0.0, 0.0), (0.0, 30.0))
+      }
+    );
+    assert!(feq(30.0, y));
+  }
+
+  #[test]
+  fn test_home() {
+    test_turtle(
+      |mut turtle| {
+        turtle.rt(90.0);
+        turtle.fd(10.0);
+        turtle.home();
+        turtle.fd(10.0);
+        CON!((0.0, 0.0), (10.0, 0.0), (0.0, 0.0), (0.0, 10.0))
+      }
+    );
+  }
+
+  #[test]
+  fn test_clean() {
+    test_turtle(
+      |mut turtle| {
+        turtle.fd(10.0);
+        turtle.clean();
+        vec![
+          Command::Line((0.0, 0.0), (0.0, 10.0)),
+          Command::Clear,
+        ]
+      }
+    );
+  }
+
+  #[test]
+  fn test_clearscreen() {
+    test_turtle(
+      |mut turtle| {
+        turtle.rt(90.0);
+        turtle.fd(10.0);
+        turtle.clearscreen();
+        turtle.fd(10.0);
+        vec![
+          Command::Line((0.0, 0.0), (10.0, 0.0)),
+          Command::Line((10.0, 0.0), (0.0, 0.0)),
+          Command::Clear,
+          Command::Line((0.0, 0.0), (0.0, 10.0)),
+        ]
+      }
+    );
+  }
+
+  #[test]
+  fn test_penupdown() {
+    test_turtle(
+      |mut turtle| {
+        turtle.fd(10.0);
+        turtle.penup();
+        turtle.fd(10.0);
+        turtle.pendown();
+        turtle.fd(10.0);
+        vec![
+          Command::Line((0.0, 0.0), (0.0, 10.0)),
+          Command::Line((0.0, 20.0), (0.0, 30.0)),
+        ]
+      }
+    );
+  }
 
   #[test]
   fn draw_square() {
-    let stub = GraphicsStub::new();
-    let mut turtle = Turtle::new(Box::new(stub.clone()));
-    let expected: Vec<String> = vec![];  
-
-    println!("{:?}", turtle.x);
-    println!("{:?}", turtle.y);
-    println!("{:?}", turtle.heading);
-    println!("{:?}", turtle.pendown);
-    println!("{:?}", stub.invocations);
-
-    turtle.fd(10.0);
-
-    println!("{:?}", turtle.x);
-    println!("{:?}", turtle.y);
-    println!("{:?}", turtle.heading);
-    println!("{:?}", turtle.pendown);
-    println!("{:?}", stub.invocations);
-
-    turtle.fd(10.0);
-
-    println!("{:?}", turtle.x);
-    println!("{:?}", turtle.y);
-    println!("{:?}", turtle.heading);
-    println!("{:?}", turtle.pendown);
-    println!("{:?}", stub.invocations);
-
-    assert_eq!(true, false);
-
-    // assert_eq!(expected, actual);
+    let expected = CON!(
+      (0.0, 0.0), (0.0, 1.0), (1.0, 1.0), (1.0, 0.0), (0.0, 0.0));
+    let code = |mut turtle: Turtle| {
+      for _ in 0..4 {
+        turtle.fd(1.0);
+        turtle.rt(90.0);
+      }
+      expected
+    };
+    test_turtle(code);
   }
 }
