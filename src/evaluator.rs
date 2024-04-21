@@ -674,3 +674,5 @@ fn main() {
     evaluator.feed(&input);
   }
 }
+
+// TODO: Evaluator tests with NullGraphics.

@@ -12,7 +12,7 @@ NOTES:
 * Parser
   * Parser should have its own "Tokens", only Parser should depend on Lexer (currently Evaluator uses Lexer::Token).
 * Turtle
-  * Add tests (with NullGraphics).
+  * Fix floating point comparison (https://stackoverflow.com/questions/4915462/how-should-i-do-floating-point-comparison/32334103#32334103).
 * Evaluator
   * MakeListType! macro (old).
   * Implement (LIST arg1 arg2 arg3 ...) - functions that take N arguments (old).
