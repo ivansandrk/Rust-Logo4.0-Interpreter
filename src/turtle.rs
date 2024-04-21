@@ -141,9 +141,24 @@ pub fn points_to_line_commands(points: &Vec<(f32, f32)>) -> Vec<Command> {
   ret
 }
 
+#[macro_export]
+macro_rules! CON {
+  ( $( $x:expr ),* $(,)? ) => {
+      {
+          #[allow(unused_mut)] // The linter gets this totally wrong.
+          let mut temp_vec = Vec::new();
+          $(
+              temp_vec.push($x);
+          )*
+          use turtle;
+          turtle::points_to_line_commands(&temp_vec)
+      }
+  };
+}
+
 #[derive(Default, Debug, Clone)]
 pub struct GraphicsStub {
-  invocations: std::rc::Rc<std::cell::RefCell<Vec<Command>>>,
+  pub invocations: std::rc::Rc<std::cell::RefCell<Vec<Command>>>,
 }
 
 impl Graphics for GraphicsStub {
@@ -170,18 +185,6 @@ mod tests {
   use super::*;
 
   // TODO: Make a macro to compress the test code even more, test_turtle(|mut turtle| { ... }) can be shortened more.
-
-  macro_rules! CON {
-    ( $( $x:expr ),* $(,)? ) => {
-        {
-            let mut temp_vec = Vec::new();
-            $(
-                temp_vec.push($x);
-            )*
-            points_to_line_commands(&temp_vec)
-        }
-    };
-  }
 
   #[test]
   fn test_points_to_line_commands() {

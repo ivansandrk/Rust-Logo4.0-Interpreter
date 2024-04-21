@@ -13,7 +13,7 @@ use parser::{AST, ListType, WordType, NumType};
 use lexer::Token;
 
 type ArgsType = Vec<String>;
-type BuiltinFunctionType = Fn(&mut Evaluator) -> Result<AST, String>;
+type BuiltinFunctionType = dyn Fn(&mut Evaluator) -> Result<AST, String>;
 
 pub struct Evaluator {
   parser: parser::Parser,
@@ -37,7 +37,7 @@ pub struct Evaluator {
 }
 
 impl Evaluator {
-  pub fn new(graphics: Box<turtle::Graphics>) -> Self {
+  pub fn new(graphics: Box<dyn turtle::Graphics>) -> Self {
     let mut evaluator = Evaluator {
       parser: parser::Parser::new(),
       turtle: turtle::Turtle::new(graphics),
@@ -663,6 +663,30 @@ impl Evaluator {
   }
 }
 
+
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  fn run_test(input: &str, expected: Vec<turtle::Command>) {
+    let graphics_stub = turtle::GraphicsStub::new();
+    let mut evaluator = Evaluator::new(Box::new(graphics_stub.clone()));
+    evaluator.feed(input);
+    // TODO:
+    // Need to check both the graphics stub and the "stdout" (program output) which needs to be captured better.
+    // Also need to be able to check for errors.
+    let actual = (*graphics_stub.invocations).take();
+    println!("{:?}", actual);
+    assert_eq!(expected, actual);
+  }
+
+  #[test]
+  fn test_fd() {
+    run_test("FD 50", CON!((0.0, 0.0), (0.0, 50.0)));
+  }
+}
+
 fn main() {
   // 1 + (2 * (3 + 4 * -5) + -6 * -(-7 + -8)) * 9
   let graphics = Box::new(turtle::GraphicsStub::new());
@@ -674,5 +698,3 @@ fn main() {
     evaluator.feed(&input);
   }
 }
-
-// TODO: Evaluator tests with NullGraphics.
