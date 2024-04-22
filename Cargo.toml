@@ -2,11 +2,11 @@
 name = "logo"
 version = "0.1.0"
 authors = ["isandrk"]
-autobins = false # TODO: Remove.
+#autobins = false # TODO: Remove.
 
-[[bin]]
-name = "evaluator"
-path = "src/evaluator.rs"
+#[[bin]]
+#name = "evaluator"
+#path = "src/evaluator.rs"
 
 [dependencies]
 #image = "0.20.0"

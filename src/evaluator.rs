@@ -1,10 +1,5 @@
-#![allow(dead_code)]
-
-pub mod parser;
-pub mod lexer;
-pub mod turtle;
-// use parser;
-//use std;
+use parser;
+use turtle;
 
 use std::collections::HashMap; // TODO: Remove import, create types for the maps used.
 use std::collections::VecDeque; // TODO: Remove import, use proper named type.
@@ -668,6 +663,7 @@ impl Evaluator {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use CON;
 
   fn run_test(input: &str, expected: Vec<turtle::Command>) {
     let graphics_stub = turtle::GraphicsStub::new();
