@@ -12,7 +12,6 @@ use ggez::conf::{WindowSetup, WindowMode};
 use ggez::{Context, ContextBuilder, GameResult, GameError};
 use ggez::event;
 use ggez::glam::Vec2;
-use ggez::mint::Point2;
 
 const WIDTH:  f32 = 1000.;
 const HEIGHT: f32 = 1000.;
@@ -62,16 +61,14 @@ fn get_input_receiver() -> std::sync::mpsc::Receiver<String> {
 //     graphics::present(&mut self.context.borrow_mut());
 //   }
 
-fn origin_to_screen_coords(point: (f32, f32)) -> Vec2 {
-  let mut width  = WIDTH;
-  let mut height = HEIGHT;
-  #[cfg(target_os="macos")]
-  {
-    width  /= 2.0;
-    height /= 2.0;
-  }
-  Vec2::new(width  + point.0,
-            height - point.1)
+// TODO: Replace function with matrix transformations?
+// TODO: Pass in WIDTH/HEIGHT?
+// TODO: Convert point to Vec2 as well (would involve converting other pieces)?
+// TODO: Both Point type and Vec type (could be same underlying thing, but for semantical difference)?
+fn virtual_to_screen_coords(point: (f32, f32)) -> Vec2 {
+  let x = point.0 + WIDTH / 2.0;
+  let y = -point.1 + HEIGHT / 2.0;
+  Vec2::new(x, y)
 }
 
 // impl evaluator::Graphics for GgezGraphics {
@@ -130,17 +127,15 @@ impl event::EventHandler<GameError> for MainState {
   }
   fn draw(&mut self, ctx: &mut Context) -> GameResult {
     // let invocations = self.graphics.invocations.replace(Vec::new());
-    let mut canvas = Canvas::from_frame(
-      ctx,
-      Color::from([0., 0., 0., 1.]));
+    let mut canvas = Canvas::from_frame(ctx, Color::BLACK);
     for cmd in self.graphics.invocations.borrow().iter() {
       match cmd {
         turtle::Command::Line(p1, p2) => {
           let line = Mesh::new_line(
             ctx,
-            &[origin_to_screen_coords(*p1), origin_to_screen_coords(*p2)],
+            &[virtual_to_screen_coords(*p1), virtual_to_screen_coords(*p2)],
             1.,
-            [1., 1., 1., 1.].into()
+            Color::WHITE
           )?;
           // canvas.draw(&line, Vec2::new(WIDTH/2., HEIGHT/2.));
           canvas.draw(&line, Vec2::new(0., 0.));
