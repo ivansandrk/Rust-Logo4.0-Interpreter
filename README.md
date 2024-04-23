@@ -14,14 +14,14 @@ You can run the example programs. Load the examples with:
 
 `LOAD "LOGO\-EXAMPLES\/IVAN.LGO`.
 
-!(DIJ)[res/dij.png]
+![DIJ](res/dij.png)
 
 ```
 CS PU SETXY [XCOR - 450 YCOR - 100] PD
 DIJ 150 20
 ```
 
-!(MN)[res/mn.png]
+![MN)](es/mn.png)
 
 ```
 CS PU SETXY [XCOR - 300 YCOR - 200] PD
