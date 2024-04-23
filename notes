@@ -18,6 +18,7 @@ NOTES:
   * Implement (LIST arg1 arg2 arg3 ...) - functions that take N arguments (old).
   * Remove imports, create proper types for VecDeque & HashMap.
   * Tests. Capturing graphics, output (printed, running commands, functions), errors.
+  * Bug where stack_expr keeps growing on error (because ? operator jumps over the pop) - use scopeguard?
 * Main
   * Convert point to Vec2 as well (would involve converting other pieces)?
   * Both Point type and Vec type (could be same underlying thing, but for semantical difference)?
