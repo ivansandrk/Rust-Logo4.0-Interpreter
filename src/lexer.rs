@@ -144,6 +144,15 @@ impl<'a> Lexer<'a> {
       let c = self.peek_char();
       match c {
         None => { break; },
+        Some('\\') => {
+          self.next_char();
+          if let Some(cc) = self.peek_char() {
+            if cc != '\n' {
+              self.next_char();
+              word.push(cc.to_ascii_uppercase());
+            }
+          }
+        },
         Some(c @ 'a' ..= 'z') |
         Some(c @ 'A' ..= 'Z') |
         Some(c @ '0' ..= '9') |

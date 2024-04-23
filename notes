@@ -9,6 +9,7 @@ NOTES:
   * (also remove stale comment in peek_char)
   * Replace some uses of match with if to simplify code.
   * Get rid of KEYWORDS (not used).
+  * TO \ BK defines the function " BK", ie. \ can escape a space making it a "letter", it can also escape other things (like arithmetic operators).
 * Parser
   * Parser should have its own "Tokens", only Parser should depend on Lexer (currently Evaluator uses Lexer::Token).
 * Turtle
@@ -19,6 +20,9 @@ NOTES:
   * Remove imports, create proper types for VecDeque & HashMap.
   * Tests. Capturing graphics, output (printed, running commands, functions), errors.
   * Bug where stack_expr keeps growing on error (because ? operator jumps over the pop) - use scopeguard?
+  * LOAD <file> - "Loading from file <file>", "KV defined", "KV redefined".
+  * Get rid of the stack_expr remainder.
+  * Get "STAZA" & "STAZA2" to work.
 * Main
   * Convert point to Vec2 as well (would involve converting other pieces)?
   * Both Point type and Vec type (could be same underlying thing, but for semantical difference)?

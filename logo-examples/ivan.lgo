@@ -1,12 +1,10 @@
 TO DIJ :A :N
-  CS
   MAKE "L []
   REPEAT :N [FD :A RT 360/:N MAKE "L LPUT GETXY :L]
   FOR "I 1 :N-1 [FOR "J :I+1 :N [PU SETXY ITEM :I :L PD SETXY ITEM :J :L]]
 END
 
 TO MN :A :N :M
-  CS
   MAKE "L []
   REPEAT :N [ \
     MAKE "S LPUT GETXY [] \
@@ -27,6 +25,15 @@ TO MN :A :N :M
 END
 
 TO STAZA :L :D
+  SETY YCOR + :D
+  FOR "I 1 (COUNT :L) [ \
+    MAKE "A ITEM :I :L \
+    IF LIST? :A THEN STAZA :A :D ELSE SETX XCOR + :A \
+  ]
+  SETY YCOR - :D
+END
+
+TO STAZA2 :L :D
   SETY YCOR + :D
   LABEL "VOZI
   MAKE "A FIRST :L

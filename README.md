@@ -10,10 +10,22 @@ Clone the repository and run the program with `cargo run`.
 
 ## Examples
 
-You can run the example programs.
+You can run the example programs. Load the examples with:
+
+`LOAD "LOGO\-EXAMPLES\/IVAN.LGO`.
 
 TODO: Example program foo (+image).
 
+```
+CS PU SETXY [XCOR - 450 YCOR - 100] PD
+DIJ 150 20
+```
+
 TODO: Example program bar (+image).
+
+```
+CS PU SETXY [XCOR - 300 YCOR - 200] PD
+MN 500 4 50
+```
 
 TODO: Example program baz (+image).
