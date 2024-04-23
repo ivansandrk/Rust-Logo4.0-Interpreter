@@ -14,18 +14,16 @@ You can run the example programs. Load the examples with:
 
 `LOAD "LOGO\-EXAMPLES\/IVAN.LGO`.
 
-TODO: Example program foo (+image).
+!(DIJ)[res/dij.png]
 
 ```
 CS PU SETXY [XCOR - 450 YCOR - 100] PD
 DIJ 150 20
 ```
 
-TODO: Example program bar (+image).
+!(MN)[res/mn.png]
 
 ```
 CS PU SETXY [XCOR - 300 YCOR - 200] PD
 MN 500 4 50
 ```
-
-TODO: Example program baz (+image).
