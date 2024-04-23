@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 extern crate ggez;
 
 mod lexer;
@@ -7,7 +5,7 @@ mod parser;
 mod turtle;
 mod evaluator;
 
-use ggez::graphics::{Canvas, Color, Mesh};
+use ggez::graphics::{Canvas, ScreenImage, ImageFormat, Color, Mesh, DrawParam};
 use ggez::conf::{WindowSetup, WindowMode};
 use ggez::{Context, ContextBuilder, GameResult, GameError};
 use ggez::event;
@@ -15,7 +13,6 @@ use ggez::glam::Vec2;
 
 const WIDTH:  f32 = 1000.;
 const HEIGHT: f32 = 1000.;
-const COLOR: [f32; 4] = [0., 1., 0., 1.];
 const INJECTED_COMMANDS: &[&str] = &[
   "repeat 6 [fd 50 lt 120 repeat 6 [fd 10 rt 60] rt 120 rt 60]"
 ];
@@ -41,79 +38,22 @@ fn get_input_receiver() -> std::sync::mpsc::Receiver<String> {
   receiver
 }
 
-
-//   fn draw(&mut self) {
-//     graphics::set_background_color(&mut self.context.borrow_mut(), graphics::Color::from((0, 0, 0, 255)));
-//     graphics::clear(&mut self.context.borrow_mut());
-//     // Draw canvas.
-//     // TODO: Use ? for this function.
-//     graphics::draw_ex(
-//       &mut self.context.borrow_mut(),
-//       &*self.canvas.borrow(),
-//       graphics::DrawParam {
-//         // color: Some(graphics::Color::from((255, 255, 255, 255))),
-//         scale: Point2::new(0.5, 0.5),
-//         ..Default::default()
-//       },
-//     ).unwrap();
-//     // TODO: Draw the turtle.
-//     // println!("{} {}", self.evaluator.turtle.x, self.evaluator.turtle.y);
-//     graphics::present(&mut self.context.borrow_mut());
-//   }
-
-// TODO: Replace function with matrix transformations?
-// TODO: Pass in WIDTH/HEIGHT?
-// TODO: Convert point to Vec2 as well (would involve converting other pieces)?
-// TODO: Both Point type and Vec type (could be same underlying thing, but for semantical difference)?
-fn virtual_to_screen_coords(point: (f32, f32)) -> Vec2 {
-  let x = point.0 + WIDTH / 2.0;
-  let y = -point.1 + HEIGHT / 2.0;
-  Vec2::new(x, y)
-}
-
-// impl evaluator::Graphics for GgezGraphics {
-//   fn line(&mut self, p1: (f32, f32), p2: (f32, f32)) {
-//     let p1 = origin_to_screen_coords(p1);
-//     let p2 = origin_to_screen_coords(p2);
-//     graphics::set_canvas(&mut self.context.borrow_mut(), Some(&self.canvas.borrow()));
-//     // TODO: Put ? on this function call at end, this do_commands function needs to return Result or Option.
-//     graphics::line(&mut self.context.borrow_mut(), &[p1, p2], 1.0).unwrap();
-//     graphics::set_canvas(&mut self.context.borrow_mut(), None);
-//   }
-
-//   fn clearscreen(&mut self) {
-//     graphics::set_canvas(&mut self.context.borrow_mut(), Some(&self.canvas.borrow()));
-//     graphics::clear(&mut self.context.borrow_mut());
-//     graphics::set_canvas(&mut self.context.borrow_mut(), None);
-//   }
-// }
-
 struct MainState {
-  canvas: Canvas,
+  screen: ScreenImage,
   receiver: std::sync::mpsc::Receiver<String>,
-  graphics: turtle::GraphicsStub,
   evaluator: evaluator::Evaluator,
+  graphics: turtle::GraphicsStub,
 }
 
 impl MainState {
   fn new(ctx: &Context) -> GameResult<Self> {
-    let canvas = Canvas::from_frame(
-      ctx,
-      Color::from([1., 1., 1., 1.]));
-    // graphics::set_canvas(&mut context, Some(&canvas));
-    // graphics::set_background_color(&mut context, graphics::Color::from((0, 0, 0, 255)));
-    // graphics::clear(&mut context);
-    // graphics::set_canvas(&mut context, None);
-
-    let receiver = get_input_receiver();
     let graphics = turtle::GraphicsStub::new();
-    let evaluator = evaluator::Evaluator::new(Box::new(graphics.clone()));
 
     Ok(Self {
-      canvas,
-      receiver,
+      screen: ScreenImage::new(ctx, ImageFormat::Rgba8UnormSrgb, 1., 1., 1),
+      receiver: get_input_receiver(),
+      evaluator: evaluator::Evaluator::new(Box::new(graphics.clone())),
       graphics,
-      evaluator,
     })
   }
 }
@@ -126,37 +66,28 @@ impl event::EventHandler<GameError> for MainState {
     Ok(())
   }
   fn draw(&mut self, ctx: &mut Context) -> GameResult {
-    // let invocations = self.graphics.invocations.replace(Vec::new());
-    let mut canvas = Canvas::from_frame(ctx, Color::BLACK);
-    for cmd in self.graphics.invocations.borrow().iter() {
+    let invocations = self.graphics.invocations.replace(Vec::new());
+    let mut canvas = Canvas::from_screen_image(ctx, &mut self.screen, None);
+    for cmd in invocations {
       match cmd {
         turtle::Command::Line(p1, p2) => {
-          let line = Mesh::new_line(
-            ctx,
-            &[virtual_to_screen_coords(*p1), virtual_to_screen_coords(*p2)],
-            1.,
-            Color::WHITE
-          )?;
-          // canvas.draw(&line, Vec2::new(WIDTH/2., HEIGHT/2.));
-          canvas.draw(&line, Vec2::new(0., 0.));
+          let points = &[Vec2::new(p1.0, p1.1), Vec2::new(p2.0, p2.1)];
+          let line = Mesh::new_line(ctx, points, 1., Color::WHITE)?;
+          // Transform the Logo coords to screen coords:
+          // * Flip y axis.
+          // * Translate to screen center.
+          let draw_param = DrawParam::new()
+            .scale(Vec2::new(1., -1.))
+            .dest(Vec2::new(WIDTH / 2., HEIGHT / 2.));
+          canvas.draw(&line, draw_param);
         },
         turtle::Command::Clear => {
-          // TODO: Implement clear.
+          canvas = Canvas::from_screen_image(ctx, &mut self.screen, Some(Color::BLACK))
         },
       }
     }
     canvas.finish(ctx)?;
-    // Canvas::from_frame draws straight to screen.
-    // let circle = Mesh::new_circle(
-    //   ctx,
-    //   DrawMode::fill(),
-    //   Vec2::new(0.0, 0.0),
-    //   100.0,
-    //   2.0,
-    //   Color::WHITE,
-    // )?;
-    // canvas.draw(&circle, Vec2::new(10.0, 380.0));
-    // canvas.finish(ctx)?;
+    ctx.gfx.present(&self.screen.image(ctx))?;
     Ok(())
   }
 }

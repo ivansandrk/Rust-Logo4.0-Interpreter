@@ -19,5 +19,5 @@ NOTES:
   * Remove imports, create proper types for VecDeque & HashMap.
   * Tests. Capturing graphics, output (printed, running commands, functions), errors.
 * Main
-  * Use new ggez.
-  * Replace origin_to_screen_coords with matrix transform?
+  * Convert point to Vec2 as well (would involve converting other pieces)?
+  * Both Point type and Vec type (could be same underlying thing, but for semantical difference)?
