@@ -133,6 +133,7 @@ impl PartialEq for Command {
 
 // Returns a Vec of Command::Line connecting all the points:
 // [(p0, p1), (p1, p2), ..., (pN-1, pN)]
+#[allow(dead_code)]
 pub fn points_to_line_commands(points: &Vec<(f32, f32)>) -> Vec<Command> {
   let mut ret = vec![];
   for i in 0..points.len().max(1)-1 {

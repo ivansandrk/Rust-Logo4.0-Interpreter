@@ -683,6 +683,7 @@ mod tests {
   }
 }
 
+#[allow(dead_code)]
 fn main() {
   // 1 + (2 * (3 + 4 * -5) + -6 * -(-7 + -8)) * 9
   let graphics = Box::new(turtle::GraphicsStub::new());

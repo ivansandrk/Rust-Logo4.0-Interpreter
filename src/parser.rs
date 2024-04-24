@@ -251,12 +251,14 @@ impl Parser {
   }
 }
 
+#[allow(dead_code)]
 fn print_list(list: &ListType, prefix: String) {
   for (i, element) in list.iter().enumerate() {
     rek_print(element, prefix.clone() + if i < list.len()-1 { "| " } else { "  " });
   }
 }
 
+#[allow(dead_code)]
 pub fn rek_print(item: &AST, prefix: String) {
   let len = prefix.len();
   if prefix.len() >= 2 {
@@ -442,6 +444,7 @@ mod tests {
 //     |           +- Negation
 //     |             +- 8.0
 //     +- 9.0
+#[allow(dead_code)]
 fn main() {
   let mut parser = Parser::new();
   loop {
