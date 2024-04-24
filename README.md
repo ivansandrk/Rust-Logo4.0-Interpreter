@@ -25,3 +25,12 @@ MN 500 4 50
 ```
 
 <img src="res/mn.png" alt="MN" width="500"/>
+
+### Quick glossary
+
+* CS or CLEARSCREEN
+* PU or PENUP
+* PD or PENDOWN
+* SETXY - sets the coordinates to the list [x y]
+* XCOR - value of X coord
+* YCOR - value of Y coord
