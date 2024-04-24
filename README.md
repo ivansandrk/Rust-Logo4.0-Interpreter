@@ -10,20 +10,18 @@ Clone the repository and run the program with `cargo run`.
 
 ## Examples
 
-You can run the example programs. Load the examples with:
-
-`LOAD "LOGO\-EXAMPLES\/IVAN.LGO`.
-
-<img src="res/dij.png" alt="DIJ" width="500"/>
+Load the example programs with (paste in terminal) `LOAD "LOGO\-EXAMPLES\/IVAN.LGO`, and then run one of the following two examples (again paste the full code into terminal):
 
 ```
 CS PU SETXY [XCOR - 450 YCOR - 100] PD
 DIJ 150 20
 ```
 
-<img src="res/mn.png" alt="MN" width="500"/>
+<img src="res/dij.png" alt="DIJ" width="500"/>
 
 ```
 CS PU SETXY [XCOR - 300 YCOR - 200] PD
 MN 500 4 50
 ```
+
+<img src="res/mn.png" alt="MN" width="500"/>
