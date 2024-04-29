@@ -31,6 +31,6 @@ MN 500 4 50
 * CS or CLEARSCREEN
 * PU or PENUP
 * PD or PENDOWN
-* SETXY - sets the coordinates to the list [x y]
+* SETXY [x y] - sets the coordinates to the list [x y]
 * XCOR - value of X coord
 * YCOR - value of Y coord
