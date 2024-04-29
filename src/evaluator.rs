@@ -650,9 +650,10 @@ impl Evaluator {
       // TODO: Occasionally try to run the following to make sure nothing is being lost from ast.
       // println!("{}", format!("Eval: {:?}", self.eval(&ast)).replace("([", "[").replace("])", "]"));
     }
-    if self.stack_expr.len() > 0 {
-      println!("stack_expr remainder: {:?}", self.stack_expr);
-    }
+    // TODO: Re-enable and fix.
+    // if self.stack_expr.len() > 0 {
+    //   println!("stack_expr remainder: {:?}", self.stack_expr);
+    // }
     assert!(self.stack_vars.len() > 0);
     assert_eq!(0, self.stack_vars[0].len());
   }
