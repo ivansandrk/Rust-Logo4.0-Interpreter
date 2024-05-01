@@ -45,61 +45,79 @@ pub enum Token {
 }
 
 struct Lexer {
-  input: VecDeque<char>,
+  input: Vec<char>,
+  pos: usize,
   tokens: Vec<Token>,
-  row: u32,
-  col: u32,
 }
 
 impl Lexer {
   fn new(input: &str) -> Self {
     Self {
       input: input.chars().collect(),
+      pos: 0,
       tokens: Vec::new(),
-      row: 0,
-      col: 0,
     }
   }
 
   fn error(&self, info: &str) -> Result<String, String> {
-    Err(format!("Error at pos {},{}: {}", self.row, self.col, info))
+    // Err(format!("Error at pos {},{}: {}", self.row, self.col, info))
+    Err(format!("Error at pos {} ({}): {}", self.pos, self.input.iter().collect::<String>(), info))
   }
 
   // TODO: Remove peek_char, user next_char and return_char when needed.
-  fn peek_char(&self) -> Option<char> {
-    self.input.front().map(|&c| c)
+  // Peek, Pop, Advance (Consume), Revert (Restore), 
+  fn bak_peek_char(&self) -> Option<char> {
+    // self.input[self.pos].map(|&c| c)
+    self.input.get(self.pos).map(|&c| c)
   }
 
-  fn peek_char2(&self) -> Option<char> {
-    self.input.get(1).map(|&c| c)
+  fn bak_peek_char2(&self) -> Option<char> {
+    // self.input.get(1).map(|&c| c)
+    None
   }
 
-  fn next_char(&mut self) -> Option<char> {
-    let next = self.peek_char();
-    self.input.pop_front();
-    if let Some(c) = next {
-      if c == '\n' {
-        self.row += 1;
-        self.col = 0;
-      } else {
-        self.col += 1;
-      }
+  fn bak_next_char(&mut self) -> Option<char> {
+    // let next = self.peek_char();
+    // self.input.pop_front();
+    // if let Some(c) = next {
+    //   if c == '\n' {
+    //     self.row += 1;
+    //     self.col = 0;
+    //   } else {
+    //     self.col += 1;
+    //   }
+    // }
+    // next
+    None
+  }
+
+  fn peek(&self) -> Option<char> {
+    self.input.get(self.pos).map(|&c| c)
+  }
+
+  fn end(&self) -> bool {
+    assert!(self.pos <= self.input.len());
+    self.pos == self.input.len()
+  }
+
+  fn next(&mut self) -> Option<char> {
+    let ret = self.peek();
+    if !self.end() {
+      self.pos += 1;
     }
-    next
+    ret
+  }
+
+  fn undo(&mut self) {
+    self.pos -= 1;
   }
 
   fn skip_whitespace(&mut self) -> bool {
     let mut skipped = false;
-    while let Some(c) = self.peek_char() {
-      match c {
-        ' ' | '\t' => {
-          self.next_char();
-          skipped = true;
-        },
-        _ => {
-          break;
-        }
-      }
+    while self.peek() == Some(' ') ||
+          self.peek() == Some('\t') {
+      self.next();
+      skipped = true;
     }
     skipped
   }
@@ -108,18 +126,17 @@ impl Lexer {
   fn next_word(&mut self) -> Result<String, String> {
     let mut word = String::new();
     loop {
-      let c = self.peek_char();
+      let c = self.next();
       match c {
         None => { break; },
         Some('\\') => {
-          // TODO: This block nicer?
-          let cc = self.peek_char2();
-          if cc.is_none() || cc == Some('\n') {
+          let c2 = self.peek();
+          if c2.is_none() || c2 == Some('\n') {
+            self.undo(); // Give back the '\\'.
             break;
           }
-          self.next_char(); // '\\'
-          self.next_char(); // escaped char
-          word.push(cc.unwrap().to_ascii_uppercase());
+          self.next(); // Consume the escaped char.
+          word.push(c2.unwrap().to_ascii_uppercase());
         },
         Some(c @ 'a' ..= 'z') |
         Some(c @ 'A' ..= 'Z') |
@@ -127,7 +144,6 @@ impl Lexer {
         Some(c @ '_') |
         Some(c @ '.') |
         Some(c @ '?') => {
-          self.next_char();
           word.push(c.to_ascii_uppercase());
         },
         _ => { break; }
@@ -148,76 +164,70 @@ impl Lexer {
       line_begin = false;
 
       // No more input, we're done.
-      let c: char;
-      match self.peek_char() {
-        None => { break; },
-        Some(x) => { c = x; },
+      if self.end() {
+        break;
       }
 
       let token: Token;
-      match c {
+      match self.next().unwrap() {
         '\n' => {
-          self.next_char();
           token = Token::LineEnd;
           line_begin = true;
         },
         '\\' => {
-          self.next_char();
-          if self.peek_char() == Some('\n') {
-            self.next_char();
+          if self.peek() == Some('\n') {
+            self.next();
             token = Token::LineCont;
             line_begin = true;
           } else {
             token = Token::Escape;
           }
         },
-        '+' => { self.next_char(); token = Token::Plus; },
-        '-' => { self.next_char(); token = Token::Minus; },
-        '*' => { self.next_char(); token = Token::Multiply; },
-        '%' => { self.next_char(); token = Token::Modulo; },
-        '/' => { self.next_char(); token = Token::Divide; },
-        '(' => { self.next_char(); token = Token::LParen; },
-        ')' => { self.next_char(); token = Token::RParen; },
-        '[' => { self.next_char(); token = Token::LBracket; },
-        ']' => { self.next_char(); token = Token::RBracket; },
-        '{' => { self.next_char(); token = Token::LBrace; },
-        '}' => { self.next_char(); token = Token::RBrace; },
-        '=' => { self.next_char(); token = Token::Equal; },
+        '+' => { token = Token::Plus; },
+        '-' => { token = Token::Minus; },
+        '*' => { token = Token::Multiply; },
+        '%' => { token = Token::Modulo; },
+        '/' => { token = Token::Divide; },
+        '(' => { token = Token::LParen; },
+        ')' => { token = Token::RParen; },
+        '[' => { token = Token::LBracket; },
+        ']' => { token = Token::RBracket; },
+        '{' => { token = Token::LBrace; },
+        '}' => { token = Token::RBrace; },
+        '=' => { token = Token::Equal; },
         '<' => {
-          self.next_char();
-          if self.peek_char() == Some('=') {
-            self.next_char();
+          if self.peek() == Some('=') {
+            self.next();
             token = Token::LessEq;
           } else {
             token = Token::Less;
           }
         },
         '>' => {
-          self.next_char();
-          if self.peek_char() == Some('=') {
-            self.next_char();
+          if self.peek() == Some('=') {
+            self.next();
             token = Token::GreaterEq;
           } else {
             token = Token::Greater;
           }
         },
         ':' => {
-          self.next_char();
           token = Token::Var(self.next_word()?);
         },
         '"' => {
-          self.next_char();
           token = Token::Word(self.next_word()?);
         },
         _ => {
+          self.undo(); // Give back the char, it's needed for word processing.
           let word = self.next_word()?;
           if let Ok(num) = word.parse::<i32>() {
             token = Token::Num(num);
           } else if let Ok(num) = word.parse::<f32>() {
             token = Token::Float(num);
           } else {
-            if word.len() == 0 && self.peek_char().is_some() {
-              let f = &format!("unknown char {:?}", self.peek_char().unwrap());
+            if word.len() == 0 && self.peek().is_some() {
+              // TODO: Quote ('\\') parsing should be done here.
+              let f = &format!("unknown char {:?}", self.peek().unwrap());
               self.error(f)?;
             }
             token = Token::Function(word);
