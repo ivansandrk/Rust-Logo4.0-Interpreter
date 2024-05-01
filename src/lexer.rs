@@ -40,10 +40,6 @@ pub enum Token {
   Greater,
   GreaterEq,
   Equal,
-
-  // Not known yet.
-  Unknown,
-  None,
 }
 
 struct Lexer<'a> {
