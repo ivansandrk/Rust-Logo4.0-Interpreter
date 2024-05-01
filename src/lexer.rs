@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
   LineEnd, // \n
@@ -42,37 +44,34 @@ pub enum Token {
   Equal,
 }
 
-struct Lexer<'a> {
-  iter: std::iter::Peekable<std::str::Chars<'a>>,
+struct Lexer {
+  input: VecDeque<char>,
   tokens: Vec<Token>,
   row: u32,
   col: u32,
 }
 
-impl<'a> Lexer<'a> {
-  fn new(input: &'a str) -> Self {
+impl Lexer {
+  fn new(input: &str) -> Self {
     Self {
-      iter: input.chars().peekable(),
+      input: input.chars().collect(),
       tokens: Vec::new(),
       row: 0,
       col: 0,
     }
   }
 
-  fn error(&mut self, info: &str) -> Result<String, String> {
+  fn error(&self, info: &str) -> Result<String, String> {
     Err(format!("Error at pos {},{}: {}", self.row, self.col, info))
   }
 
-  fn peek_char(&mut self) -> Option<char> {
-    // Have the return types of peek & next consistent.
-    match self.iter.peek() {
-      Some(&c) => Some(c),
-      None     => None,
-    }
+  fn peek_char(&self) -> Option<char> {
+    self.input.front().map(|&c| c)
   }
 
   fn next_char(&mut self) -> Option<char> {
-    let next = self.iter.next();
+    let next = self.peek_char();
+    self.input.pop_front();
     if let Some(c) = next {
       if c == '\n' {
         self.row += 1;
