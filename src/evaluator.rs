@@ -1,11 +1,13 @@
 use parser;
 use turtle;
 
+use std::cell::RefCell;
 use std::collections::HashMap; // TODO: Remove import, create types for the maps used.
 use std::collections::VecDeque; // TODO: Remove import, use proper named type.
 use std::io::BufRead;
 use parser::{AST, ListType, WordType, NumType};
 use lexer::Token;
+use scopeguard::guard;
 
 type ArgsType = Vec<String>;
 type BuiltinFunctionType = dyn Fn(&mut Evaluator) -> Result<AST, String>;
@@ -48,6 +50,22 @@ impl Evaluator {
     evaluator.stack_vars.push(HashMap::new());
     evaluator.define_builtins();
     evaluator
+  }
+
+  fn local_vars(&mut self) -> &mut HashMap<String, AST> {
+    self.stack_vars.last_mut().unwrap()
+  }
+
+  fn current_expr_list(&mut self) -> &mut VecDeque<AST> {
+    self.stack_expr.last_mut().unwrap()
+  }
+
+  fn set(&mut self, var: WordType, expr: AST) {
+    if self.local_vars().contains_key(&var) {
+      self.local_vars().insert(var, expr);
+    } else {
+      self.vars.insert(var, expr);
+    }
   }
 
   fn define_builtins(&mut self) {
@@ -274,14 +292,6 @@ impl Evaluator {
     }
   }
 
-  fn set(&mut self, var: WordType, expr: AST) {
-    if self.local_vars().contains_key(&var) {
-      self.local_vars().insert(var, expr);
-    } else {
-      self.vars.insert(var, expr);
-    }
-  }
-
   // TODO: eval_next_as_number, eval_next, as_number ?
   fn get_number(&mut self, ast_node: &AST) -> Result<NumType, String> {
     match self.eval(ast_node)? {
@@ -391,16 +401,9 @@ impl Evaluator {
     return Ok(true);
   }
 
-  fn local_vars(&mut self) -> &mut HashMap<String, AST> {
-    self.stack_vars.last_mut().unwrap()
-  }
-
-  fn current_expr_list(&mut self) -> &mut VecDeque<AST> {
-    self.stack_expr.last_mut().unwrap()
-  }
-
   fn eval_next_expr(&mut self) -> Result<AST, String> {
     let next_ast = self.current_expr_list().pop_front();
+    // TODO: if let Some(ast) = next_ast { ...
     match next_ast {
       Some(ast) => {
         return self.eval(&ast);
@@ -473,7 +476,7 @@ impl Evaluator {
   fn eval(&mut self, ast_node: &AST) -> Result<AST, String> {
     // self.print_locals();
     // self.print_globals();
-    // println!("{:?}", ast_node);
+    println!("{:?}", ast_node);
     if self.define_user_function(ast_node)? {
       // We're currently defining a function.
       return Ok(AST::None);
@@ -492,6 +495,9 @@ impl Evaluator {
       // TODO: Type that pushes during construction, and pops during destruction.
       AST::ExprLine(expr_list) => {
         self.stack_expr.push(expr_list.clone());
+        // defer! {
+        //   self.stack_expr.pop();
+        // }
         while let Some(expr) = self.current_expr_list().pop_front() {
           ret = self.eval(&expr)?;
           if ret != AST::None {
@@ -507,6 +513,8 @@ impl Evaluator {
         if expr_list.is_empty() {
           ret = AST::List(ListType::new());
         } else {
+          // TODO: Can this be simplified to just (probably) - nope, needs recursive parsing with pushing onto stack:
+          // ret = self.eval(&expr_list[0])?;
           self.stack_expr.push(expr_list.clone());
           let next_expr = self.current_expr_list().pop_front().unwrap();
           ret = self.eval(&next_expr)?;
@@ -514,6 +522,7 @@ impl Evaluator {
         }
       },
       AST::Var(var_name) => {
+        // TODO: Should replace stack_vars here with local_vars?
         if let Some(ast) = self.stack_vars.last().unwrap().get(var_name) {
           ret = ast.clone();
         } else if let Some(ast) = self.vars.get(var_name) {
@@ -650,10 +659,9 @@ impl Evaluator {
       // TODO: Occasionally try to run the following to make sure nothing is being lost from ast.
       // println!("{}", format!("Eval: {:?}", self.eval(&ast)).replace("([", "[").replace("])", "]"));
     }
-    // TODO: Re-enable and fix.
-    // if self.stack_expr.len() > 0 {
-    //   println!("stack_expr remainder: {:?}", self.stack_expr);
-    // }
+    if self.stack_expr.len() > 0 {
+      println!("stack_expr remainder: {:?}", self.stack_expr);
+    }
     assert!(self.stack_vars.len() > 0);
     assert_eq!(0, self.stack_vars[0].len());
   }

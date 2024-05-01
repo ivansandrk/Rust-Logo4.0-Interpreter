@@ -10,3 +10,4 @@ authors = ["isandrk"]
 
 [dependencies]
 ggez = "0.9"
+scopeguard = "1.2.0"

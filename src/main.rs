@@ -1,4 +1,6 @@
 extern crate ggez;
+#[macro_use(defer)]
+extern crate scopeguard;
 
 mod lexer;
 mod parser;
