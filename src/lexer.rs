@@ -1,34 +1,3 @@
-#![allow(dead_code)] // TODO: Remove with KEYWORDS.
-
-use std::iter::FromIterator;
-
-const KEYWORDS: &str = "
-  FD FORWARD BK BACK LT LEFT RT RIGHT
-  SETPOS SETXY SETX SETY SETHEADING HOME ARC
-  GETXY POS XCOR YCOR HEADING TOWARDS
-  SCRUNCH SETSCRUNCH
-  ST SHOWTURTLE HT HIDETURTLE CLEAN CS CLEARSCREEN
-  WRAP WINDOW FENCE TURTLEMODE
-  FILLED 
-  LABEL SETLABELHEIGHT LABELSIZE
-  TS TEXTSCREEN FS FULLSCREEN SS SPLITSCREEN SCREENMODE
-  REFRESH NOREFRESH
-  SHOWNP SHOWN?
-  PD PENDOWN PU PENUP PPT PENPAINT PE PENERASE PX PENREVERSE
-  SETPC SETPENCOLOR SETPALETTE SETPENSIZE SETPENPATTERN SETPEN
-  SETBG SETBACKGROUND BG BACKGROUND
-  PENDOWNP PENDOWN? PENMODE PC PENCOLOR PALETTE PENSIZE PEN
-  SAVEPICT LOADPICT EPSPICT
-  MOUSEPOS CLICKPOS BUTTONP BUTTON?
-
-  TO END
-  REPEAT FOR WHILE 
-  LOCAL MAKE OP
-  LIST LPUT FPUT
-  COUNT ITEM
-  READ
-";
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
   LineEnd, // \n
@@ -82,7 +51,6 @@ struct Lexer<'a> {
   tokens: Vec<Token>,
   row: u32,
   col: u32,
-  keyword_set: std::collections::HashSet<&'static str>,
 }
 
 impl<'a> Lexer<'a> {
@@ -92,7 +60,6 @@ impl<'a> Lexer<'a> {
       tokens: Vec::new(),
       row: 0,
       col: 0,
-      keyword_set: std::collections::HashSet::from_iter(KEYWORDS.trim().split([' ', '\n'].as_ref())),
     }
   }
 
