@@ -65,8 +65,13 @@ impl Lexer {
     Err(format!("Error at pos {},{}: {}", self.row, self.col, info))
   }
 
+  // TODO: Remove peek_char, user next_char and return_char when needed.
   fn peek_char(&self) -> Option<char> {
     self.input.front().map(|&c| c)
+  }
+
+  fn peek_char2(&self) -> Option<char> {
+    self.input.get(1).map(|&c| c)
   }
 
   fn next_char(&mut self) -> Option<char> {
@@ -107,13 +112,14 @@ impl Lexer {
       match c {
         None => { break; },
         Some('\\') => {
-          self.next_char();
-          if let Some(cc) = self.peek_char() {
-            if cc != '\n' {
-              self.next_char();
-              word.push(cc.to_ascii_uppercase());
-            }
+          // TODO: This block nicer?
+          let cc = self.peek_char2();
+          if cc.is_none() || cc == Some('\n') {
+            break;
           }
+          self.next_char(); // '\\'
+          self.next_char(); // escaped char
+          word.push(cc.unwrap().to_ascii_uppercase());
         },
         Some(c @ 'a' ..= 'z') |
         Some(c @ 'A' ..= 'Z') |
