@@ -60,35 +60,7 @@ impl Lexer {
   }
 
   fn error(&self, info: &str) -> Result<String, String> {
-    // Err(format!("Error at pos {},{}: {}", self.row, self.col, info))
     Err(format!("Error at pos {} ({}): {}", self.pos, self.input.iter().collect::<String>(), info))
-  }
-
-  // TODO: Remove peek_char, user next_char and return_char when needed.
-  // Peek, Pop, Advance (Consume), Revert (Restore), 
-  fn bak_peek_char(&self) -> Option<char> {
-    // self.input[self.pos].map(|&c| c)
-    self.input.get(self.pos).map(|&c| c)
-  }
-
-  fn bak_peek_char2(&self) -> Option<char> {
-    // self.input.get(1).map(|&c| c)
-    None
-  }
-
-  fn bak_next_char(&mut self) -> Option<char> {
-    // let next = self.peek_char();
-    // self.input.pop_front();
-    // if let Some(c) = next {
-    //   if c == '\n' {
-    //     self.row += 1;
-    //     self.col = 0;
-    //   } else {
-    //     self.col += 1;
-    //   }
-    // }
-    // next
-    None
   }
 
   fn peek(&self) -> Option<char> {
@@ -128,15 +100,14 @@ impl Lexer {
     loop {
       let c = self.next();
       match c {
-        None => { break; },
         Some('\\') => {
-          let c2 = self.peek();
-          if c2.is_none() || c2 == Some('\n') {
+          let cc = self.peek();
+          if cc.is_none() || cc == Some('\n') {
             self.undo(); // Give back the '\\'.
             break;
           }
           self.next(); // Consume the escaped char.
-          word.push(c2.unwrap().to_ascii_uppercase());
+          word.push(cc.unwrap().to_ascii_uppercase());
         },
         Some(c @ 'a' ..= 'z') |
         Some(c @ 'A' ..= 'Z') |
@@ -146,7 +117,11 @@ impl Lexer {
         Some(c @ '?') => {
           word.push(c.to_ascii_uppercase());
         },
-        _ => { break; }
+        None => { break; },
+        _ => {
+          self.undo(); // Give back the char.
+          break;
+        }
       }
     }
     Ok(word)
@@ -262,19 +237,19 @@ mod tests {
   fn test_ok(input: &str, expected: &[Token]) {
     let lexed = Lexer::new(input).process();
     let expected = Ok(expected.to_vec());
-    assert_eq!(expected, lexed);
+    assert_eq!(expected, lexed, "'''{}'''", input);
   }
 
   fn test_err(input: &str, expected: &str) {
     let lexed = Lexer::new(input).process();
     let expected = Err(expected.to_string());
-    assert_eq!(expected, lexed);
+    assert_eq!(expected, lexed, "'''{}'''", input);
   }
 
   #[test]
   fn unknown_char() {
     test_err("fd 20`~",
-             "Error at pos 0,5: unknown char '`'");
+             "Error at pos 5 (fd 20`~): unknown char '`'");
   }
 
   #[test]
