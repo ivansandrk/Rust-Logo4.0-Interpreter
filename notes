@@ -3,12 +3,9 @@ NOTES:
 * Code coverage for tests (cargo-llvm-cov?).
 * Lexer
   * Implement Iter(able) on Lexer (? old comment).
-  * Forgo Strings, use &str everywhere (? old comment).
-  * Keywords go in parser (? old comment, parser also doesn't use them).
   * Rename Lexer::next_char to consume_char since the return value is never used.
   * (also remove stale comment in peek_char)
   * Replace some uses of match with if to simplify code.
-  * Get rid of KEYWORDS (not used).
   * TO \ BK defines the function " BK", ie. \ can escape a space making it a "letter", it can also escape other things (like arithmetic operators).
 * Parser
   * Parser should have its own "Tokens", only Parser should depend on Lexer (currently Evaluator uses Lexer::Token).
