@@ -1,5 +1,3 @@
-use std::collections::VecDeque;
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
   LineEnd, // \n
