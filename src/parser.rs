@@ -414,6 +414,12 @@ mod tests {
     assert_eq!(AST::ExprLine(ListType::from(vec![AST::Num(1.0), AST::Num(2.0), AST::Num(3.0)])),
                parser.parse("3").unwrap());
   }
+
+  #[test]
+  fn empty_line() {
+    let mut parser = Parser::new();
+    assert_eq!(AST::ExprLine(ListType::new()), parser.parse("\n").unwrap());
+  }
 }
 
 // Output for sample input "1 + (2 * (3 + 4 * -5) + -6 * -(-7 + -8)) * 9":
