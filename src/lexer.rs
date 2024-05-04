@@ -1,8 +1,9 @@
+use std::collections::HashMap;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
   LineEnd, // \n
   LineCont, // \\n
-  Escape, // \ without a following newline
   Whitespace, // A block (1+ chars) of non-newline whitespace.
 
   // Can be builtin or user defined.
@@ -42,6 +43,38 @@ pub enum Token {
   Equal,
 }
 
+const CHAR_TO_TOKEN_MAP: [(&str, Token); 20] = [
+  // Two-char tokens and their one-char versions.
+  ("\\\n", Token::LineCont),
+  ("<=", Token::LessEq),
+  ("<", Token::Less),
+  (">=", Token::GreaterEq),
+  (">", Token::Greater),
+  // One-char tokens.
+  (" ", Token::Whitespace),
+  ("\t", Token::Whitespace),
+  ("\n", Token::LineEnd),
+  ("+", Token::Plus),
+  ("-", Token::Minus),
+  ("*", Token::Multiply),
+  ("%", Token::Modulo),
+  ("/", Token::Divide),
+  ("(", Token::LParen),
+  (")", Token::RParen),
+  ("[", Token::LBracket),
+  ("]", Token::RBracket),
+  ("{", Token::LBrace),
+  ("}", Token::RBrace),
+  ("=", Token::Equal),
+];
+
+// Initial implementation exposed peek/end/next/undo, but next/undo are footguns
+// where it's only a matter of time when a bug sneaks in (check commit
+// 71fa22a7539636b8673bc5f9a43593deec2cfdcf - forgot to call an undo).
+// Exposing peek/peek2/end/advance is much safer (need to explicitly think when
+// to advance).
+// Lexer needs 2-lookahead at times therefore the peek2.
+
 struct Lexer {
   input: Vec<char>,
   pos: usize,
@@ -57,7 +90,7 @@ impl Lexer {
     }
   }
 
-  fn error(&self, info: &str) -> Result<String, String> {
+  fn error(&self, info: &str) -> Result<Vec<Token>, String> {
     Err(format!("Error at pos {} ({}): {}", self.pos, self.input.iter().collect::<String>(), info))
   }
 
@@ -65,46 +98,34 @@ impl Lexer {
     self.input.get(self.pos).map(|&c| c)
   }
 
+  fn peek2(&self) -> Option<char> {
+    self.input.get(self.pos + 1).map(|&c| c)
+  }
+
   fn end(&self) -> bool {
     assert!(self.pos <= self.input.len());
     self.pos == self.input.len()
   }
 
-  fn next(&mut self) -> Option<char> {
-    let ret = self.peek();
+  fn advance(&mut self) -> &mut Self {
     if !self.end() {
       self.pos += 1;
     }
-    ret
-  }
-
-  fn undo(&mut self) {
-    self.pos -= 1;
-  }
-
-  fn skip_whitespace(&mut self) -> bool {
-    let mut skipped = false;
-    while self.peek() == Some(' ') ||
-          self.peek() == Some('\t') {
-      self.next();
-      skipped = true;
-    }
-    skipped
+    self
   }
 
   // ?_.[a-z][A-Z][0-9]
-  fn next_word(&mut self) -> Result<String, String> {
+  fn collect_word(&mut self) -> String {
     let mut word = String::new();
     loop {
-      let c = self.next();
+      let c = self.peek();
       match c {
         Some('\\') => {
-          let cc = self.peek();
+          let cc = self.peek2();
           if cc.is_none() || cc == Some('\n') {
-            self.undo(); // Give back the '\\'.
             break;
           }
-          self.next(); // Consume the escaped char.
+          self.advance().advance();
           word.push(cc.unwrap().to_ascii_uppercase());
         },
         Some(c @ 'a' ..= 'z') |
@@ -113,113 +134,65 @@ impl Lexer {
         Some(c @ '_') |
         Some(c @ '.') |
         Some(c @ '?') => {
+          self.advance();
           word.push(c.to_ascii_uppercase());
         },
-        None => { break; },
         _ => {
-          self.undo(); // Give back the char.
           break;
         }
       }
     }
-    Ok(word)
+    word
   }
 
   fn process(&mut self) -> Result<Vec<Token>, String> {
-    let mut line_begin = true;
+    // Make sure we end with a newline which gets converted to LineEnd or LineCont later.
+    if self.input.last() != Some(&'\n') {
+      self.input.push('\n');
+    }
+    let mapping: HashMap<&str, Token> = HashMap::from(CHAR_TO_TOKEN_MAP);
 
-    loop {
-      // Skip whitespace, and collect the token if it's not the beginning of the line as it might be
-      // needed in the parser.
-      if self.skip_whitespace() && !line_begin {
-        self.tokens.push(Token::Whitespace);
-      }
-      line_begin = false;
+    while let Some(c1) = self.peek() {
+      let c = format!("{}", c1);
+      let cc = if let Some(c2) = self.peek2() {
+        format!("{}{}", c1, c2)
+      } else {
+        "".to_string()
+      };
 
-      // No more input, we're done.
-      if self.end() {
-        break;
-      }
-
-      let token: Token;
-      match self.next().unwrap() {
-        '\n' => {
-          token = Token::LineEnd;
-          line_begin = true;
-        },
-        '\\' => {
-          if self.peek() == Some('\n') {
-            self.next();
-            token = Token::LineCont;
-            line_begin = true;
-          } else {
-            token = Token::Escape;
-          }
-        },
-        '+' => { token = Token::Plus; },
-        '-' => { token = Token::Minus; },
-        '*' => { token = Token::Multiply; },
-        '%' => { token = Token::Modulo; },
-        '/' => { token = Token::Divide; },
-        '(' => { token = Token::LParen; },
-        ')' => { token = Token::RParen; },
-        '[' => { token = Token::LBracket; },
-        ']' => { token = Token::RBracket; },
-        '{' => { token = Token::LBrace; },
-        '}' => { token = Token::RBrace; },
-        '=' => { token = Token::Equal; },
-        '<' => {
-          if self.peek() == Some('=') {
-            self.next();
-            token = Token::LessEq;
-          } else {
-            token = Token::Less;
-          }
-        },
-        '>' => {
-          if self.peek() == Some('=') {
-            self.next();
-            token = Token::GreaterEq;
-          } else {
-            token = Token::Greater;
-          }
-        },
-        ':' => {
-          token = Token::Var(self.next_word()?);
-        },
-        '"' => {
-          token = Token::Word(self.next_word()?);
-        },
-        _ => {
-          self.undo(); // Give back the char, it's needed for word processing.
-          let word = self.next_word()?;
-          if let Ok(num) = word.parse::<i32>() {
-            token = Token::Num(num);
-          } else if let Ok(num) = word.parse::<f32>() {
-            token = Token::Float(num);
-          } else {
-            if word.len() == 0 && self.peek().is_some() {
-              // TODO: Quote ('\\') parsing should be done here.
-              let f = &format!("unknown char {:?}", self.peek().unwrap());
-              self.error(f)?;
-            }
-            token = Token::Function(word);
-          }
+      let token;
+      if let Some(t) = mapping.get(cc.as_str()) {
+        self.advance().advance();
+        token = t.clone();
+      } else if let Some(t) = mapping.get(c.as_str()) {
+        self.advance();
+        token = t.clone();
+      } else if c == ":" {
+        self.advance();
+        token = Token::Var(self.collect_word());
+      } else if c == "\"" {
+        self.advance();
+        token = Token::Word(self.collect_word());
+      } else {
+        let word = self.collect_word();
+        if let Ok(num) = word.parse::<i32>() {
+          token = Token::Num(num);
+        } else if let Ok(num) = word.parse::<f32>() {
+          token = Token::Float(num);
+        } else if word.len() > 0 {
+          token = Token::Function(word);
+        } else { // word.len() == 0
+          let f = &format!("unknown char {}", c);
+          return self.error(f);
         }
       }
-      self.tokens.push(token);
-    }
 
-    let mut tokens = std::mem::replace(&mut self.tokens, Vec::new());
-    // Make sure we end with a LineEnd/LineCont.
-    if tokens.last() != Some(&Token::LineEnd) && tokens.last() != Some(&Token::LineCont) {
-      if tokens.last() == Some(&Token::Escape) {
-        tokens.pop();
-        tokens.push(Token::LineCont);
-      } else {
-        tokens.push(Token::LineEnd);
+      if !(token == Token::Whitespace && self.tokens.last() == Some(&Token::Whitespace)) {
+        self.tokens.push(token.clone());
       }
     }
+
+    let tokens = std::mem::replace(&mut self.tokens, Vec::new());
     Ok(tokens)
   }
 }
@@ -246,8 +219,8 @@ mod tests {
 
   #[test]
   fn unknown_char() {
-    test_err("fd 20`~",
-             "Error at pos 5 (fd 20`~): unknown char '`'");
+    test_err("fd 20`~\n",
+             "Error at pos 5 (fd 20`~\n): unknown char `");
   }
 
   #[test]
@@ -311,7 +284,7 @@ mod tests {
 
   #[test]
   fn number_num() {
-    test_ok("repeat \n 50[\n", &[
+    test_ok("repeat \n50[\n", &[
       Token::Function("REPEAT".to_string()),
       Token::Whitespace,
       Token::LineEnd,
@@ -361,13 +334,15 @@ mod tests {
   }
 
   #[test]
-  fn skip_whitespace_line_begin() {
+  fn dont_skip_whitespace_line_begin() {
     test_ok("  4 5 \n 6\n", &[
+      Token::Whitespace,
       Token::Num(4),
       Token::Whitespace,
       Token::Num(5),
       Token::Whitespace,
       Token::LineEnd,
+      Token::Whitespace,
       Token::Num(6),
       Token::LineEnd,
     ]);
